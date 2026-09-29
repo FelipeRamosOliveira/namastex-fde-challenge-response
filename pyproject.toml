@@ -41,8 +41,11 @@ packages = ["src/autoseguro"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+addopts = "-m 'not llm'"  # teste ao vivo com Groq: uv run pytest -m llm tests/live
+pythonpath = ["tests/unit"]
 markers = [
   "integration: sobe a quote-api real do desafio (vendor/challenge) em processo local",
+  "llm: chama o Groq de verdade (precisa de GROQ_API_KEY e rede)",
 ]
 
 [tool.ruff]

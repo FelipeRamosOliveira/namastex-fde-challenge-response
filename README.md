@@ -2,7 +2,7 @@
 
 Agente de WhatsApp da seguradora fictícia AutoSeguro (desafio FDE da Namastex): conversa com o lead, qualifica, cota na API do desafio e decide quando passar para um vendedor humano. Não trava e não inventa preço quando a API falha.
 
-> Status: etapas 0 a 3 prontas (fundação, dados, ferramentas MCP resilientes, grafo LangGraph sem LLM). Plano completo em `docs/PLANO.md`.
+> Status: etapas 0 a 4 prontas (fundação, dados, ferramentas MCP resilientes, grafo LangGraph, LLM Groq com guardrails). Plano completo em `docs/PLANO.md`.
 
 ## Regras de ouro
 | Regra | Como é garantida | Prova |
@@ -44,16 +44,18 @@ uv run uvicorn autoseguro.api.app:app --port 8080     # sobe as ferramentas MCP 
 
 ### Testes
 ```bash
-uv run pytest                  # unitários + integração contra a quote-api original
+uv run pytest                  # unitários + integração contra a quote-api original (LLM simulado)
 uv run pytest tests/unit       # só unitários
+uv run pytest -m llm tests/live   # AO VIVO com o Groq (precisa de GROQ_API_KEY)
+uv run python scripts/smoke_llm.py   # conversa de demonstração com o Groq de verdade
 uv run ruff check src tests
 ```
 
 ## Arquitetura
 ```
 Lead -> (Omni, etapa 6) -> FastAPI /v1/messages -> LangGraph
-  entrada (máscara PII) -> decidir (extrai, pré-valida regras) -> cotar (MCP) | handoff (MCP)
-  -> saida (guardrail de PII e de valores) -> lead
+  entrada (máscara PII) -> decidir (extrai com LLM validado ou regras, pré-valida) -> cotar (MCP) | handoff (MCP)
+  -> saida (frase-ponte do LLM, se couber; guardrail de PII e de valores) -> lead
 
 MCP autoseguro-tools: consultar_planos, pre_validar, cotar, registrar_handoff, status_cotacao
 Cotar: timeout 2,5 s, hedging em 1,2 s, retry com jitter, circuit breaker, cache da resposta real
@@ -69,6 +71,7 @@ Fachada: lock por conversa, máscara antes do grafo, id opaco, idempotência por
 | 0004 | Máscara com tokens estáveis e vault por conversa | LLM e logs nunca veem o dado; o CEP real só é usado na cotação |
 | 0005 | Valores só via template a partir da API | Preço inventado é impossível por construção e bloqueado na saída |
 | 0006 | Dataset em Bronze, Silver e Gold | Gold com respostas reais da API vira base de avaliação |
+| 0007 | LLM (Groq gpt-oss-20b, reserva OpenRouter) só interpreta e redige frase-ponte sem números | Entende texto livre sem poder decidir fluxo nem preço; falha do LLM cai nas regras |
 
 ## Quando o agente passa para um humano
 | Motivo | Quando |

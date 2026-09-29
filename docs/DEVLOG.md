@@ -31,3 +31,10 @@ Achou 12 problemas, 10 reproduzidos. Todos corrigidos com teste de regressão:
 - Achado por um teste novo: a saudação caía no fallback porque o guardrail lia "aqui é o assistente" como nome. Regex corrigida e teste que passa todos os textos fixos pelo guardrail.
 
 **Resultado:** 120 testes passando (unitários e integração contra a API original), lint limpo.
+
+## Sessão 1, continuação (29/09/2026): etapa 4
+- A chave do Groq tinha sido colada na linha `OPENROUTER_API_KEY` do `.env`; a IA detectou pelo prefixo `gsk_` (sem exibir o valor) e moveu para `GROQ_API_KEY`.
+- O Groq e o OpenRouter são bloqueados pela política de rede tanto na nuvem da IA quanto na VM do computador. Decisão: desenvolver com um Groq falso (`tests/unit/fake_llm.py`) e deixar teste ao vivo e smoke para rodar na máquina do Felipe.
+- Modelo: a IA consultou a documentação atual do Groq e trocou `llama-3.3-70b-versatile` por `openai/gpt-oss-20b`, que tem structured outputs estrito (ADR 0007).
+- Proposta aceita: LLM só como intérprete (extração validada) e redator de frase-ponte sem números; decisões e valores continuam no código.
+- Detalhe do Python 3.14: o `ruff format` reescreveu `except (A, B):` como `except A, B:` (PEP 758, válido no 3.14).

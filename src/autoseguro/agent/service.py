@@ -25,9 +25,13 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from autoseguro.agent.extract import Extractor
 from autoseguro.agent.gateway import ToolGateway
 from autoseguro.agent.graph import build_graph
+from autoseguro.agent.llm_extract import LLMExtractor
+from autoseguro.agent.redator import Redator
 from autoseguro.config import Settings
 from autoseguro.guardrails.pii import PiiVault, mask
+from autoseguro.llm.client import LLMClient, providers_from_settings
 from autoseguro.tools.mcp_server import Services, build_server
+from autoseguro.tools.store import make_store
 
 MAX_DEDUP = 5000
 
@@ -43,8 +47,11 @@ class AutoSeguroAgent:
         extractor: Extractor | None = None,
         services: Services | None = None,
         hoje=None,
+        llm: LLMClient | None = None,
     ) -> None:
         self.s, self.extractor, self._services, self._hoje = settings, extractor, services, hoje
+        self._llm = llm
+        self.llm: LLMClient | None = None
         self._stack = AsyncExitStack()
         self.graph = None
         self.services: Services | None = None
@@ -63,11 +70,24 @@ class AutoSeguroAgent:
         kw: dict[str, Any] = {"max_turnos_sem_progresso": self.s.max_turnos_sem_progresso}
         if self._hoje:
             kw["hoje"] = self._hoje
-        self.graph = build_graph(gateway, self.extractor, saver, **kw)
+        extractor, redator = self.extractor, None
+        llm = self._llm or self._build_llm()
+        if llm is not None and llm.available:
+            extractor = extractor or LLMExtractor(llm)
+            redator = Redator(llm) if self.s.usar_redator else None
+        self.llm = llm
+        self.graph = build_graph(gateway, extractor, saver, redator=redator, **kw)
         return self
 
     async def __aexit__(self, *exc) -> None:
         await self._stack.aclose()
+
+    def _build_llm(self) -> LLMClient | None:
+        providers = providers_from_settings(self.s)
+        if not providers:
+            return None
+        store = self.services.store if self.services else make_store(self.s.redis_url)
+        return LLMClient(providers, store, timeout_s=self.s.llm_timeout_s)
 
     def _lock(self, ref: str) -> asyncio.Lock:
         # Um processo: asyncio.Lock. Com várias réplicas, trocar por lock no Redis (etapa 5).

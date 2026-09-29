@@ -23,6 +23,7 @@ CAMPOS = ("veiculo_ano", "idade", "cep", "plano_id", "data_inicio")
 class Extraction:
     slots: dict[str, object] = field(default_factory=dict)
     intents: set[str] = field(default_factory=set)
+    fonte: str = "regras"  # regras | llm:<provedor>
     # intents: saudacao, pedido_humano, fora_de_escopo, aceite, negacao, objecao_preco,
     #          concorrente, pergunta_planos, midia
 

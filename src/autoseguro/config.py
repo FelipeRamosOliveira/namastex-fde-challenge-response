@@ -13,9 +13,11 @@ class Settings(BaseSettings):
 
     # --- LLM (etapa 4) ---
     groq_api_key: SecretStr | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"  # structured outputs estrito, ~1000 tokens/s
     openrouter_api_key: SecretStr | None = None
-    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    openrouter_model: str = "openai/gpt-oss-20b:free"
+    llm_timeout_s: float = 6.0
+    usar_redator: bool = True  # frase natural antes da resposta, sem números
 
     # --- API de cotação do desafio ---
     quote_api_url: str = "http://localhost:8000"

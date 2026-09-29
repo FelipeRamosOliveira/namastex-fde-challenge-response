@@ -48,6 +48,7 @@ class AgentState(TypedDict, total=False):
     acao: str
     reply: str
     reply_prefix: str
+    ponte: bool
     quotes: list[dict[str, Any]]  # respostas OK da API (fonte dos valores permitidos)
     quote_atual: dict[str, Any] | None
     handoff: dict[str, Any] | None
@@ -76,6 +77,7 @@ def build_graph(
     checkpointer: Any = None,
     max_turnos_sem_progresso: int = 6,
     hoje: Any = date.today,
+    redator: Any = None,
 ):
     extractor = extractor or RuleExtractor()
     planos_cache: dict[str, Any] = {}
@@ -99,6 +101,7 @@ def build_graph(
             "reply": "",
             "reply_prefix": "",
             "handoff_pendente": None,
+            "ponte": False,
             "transcript": [
                 {
                     "role": "lead",
@@ -135,7 +138,11 @@ def build_graph(
         ex = await extractor.extract(text, state.get("awaiting"), hj)
         events = [
             _event(
-                state, "extracao", slots={k: str(v) for k, v in ex.slots.items()}, intents=sorted(ex.intents)
+                state,
+                "extracao",
+                slots={k: str(v) for k, v in ex.slots.items()},
+                intents=sorted(ex.intents),
+                fonte=ex.fonte,
             )
         ]
 
@@ -193,11 +200,14 @@ def build_graph(
 
         progresso = bool(novos) or bool(ex.intents & {"aceite", "negacao", "pergunta_planos"})
         sem_prog = 0 if progresso else state.get("turnos_sem_progresso", 0) + 1
+        # frase natural do redator só quando o lead perguntou algo ou falou fora do fluxo
+        ponte = "?" in text or (not ex.slots and not (ex.intents - {"saudacao"}))
         base = {
             "slots": slots,
             "turnos_sem_progresso": sem_prog,
             "events": events,
             "cep_prefixo": cep_prefixo,
+            "ponte": ponte,
         }
 
         def data_vencida() -> bool:
@@ -404,8 +414,14 @@ def build_graph(
     # ------------------------------------------------------------------ saida
     async def saida(state: AgentState) -> dict[str, Any]:
         reply = state.get("reply") or T.FALLBACK_SEGURO
-        chk = check_output(reply, T.valores_permitidos(state.get("quotes") or []))
+        permitidos = T.valores_permitidos(state.get("quotes") or [])
         events = []
+        if redator is not None and state.get("ponte") and state.get("stage") != "handoff":
+            frase = await redator.ponte(state.get("turn_text", ""), reply)
+            if frase and check_output(f"{frase} {reply}", permitidos).ok:
+                reply = f"{frase}\n{reply}"
+            events.append(_event(state, "redator", usada=bool(frase)))
+        chk = check_output(reply, permitidos)
         if not chk.ok:
             events.append(_event(state, "guardrail_saida_bloqueou", violacoes=chk.violacoes))
             reply = T.FALLBACK_SEGURO
