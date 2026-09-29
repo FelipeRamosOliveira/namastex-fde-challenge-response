@@ -33,9 +33,16 @@ services:
     environment:
       QUOTE_API_URL: http://quote-api:8000
       REDIS_URL: redis://redis:6379/0
+    healthcheck:
+      # a imagem slim não tem curl: basta a porta aceitar conexão
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('localhost',8100),2)"]
+      interval: 3s
+      start_period: 20s
+      retries: 20
     depends_on:
       quote-api: {condition: service_healthy}
       redis: {condition: service_healthy}
+    restart: unless-stopped
 
   agent-api:
     build: .
@@ -48,8 +55,15 @@ services:
       CHECKPOINT_DB: /app/data/runtime/checkpoints.sqlite
     volumes:
       - agent-data:/app/data/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      start_period: 20s
+      retries: 10
     depends_on:
-      mcp-tools: {condition: service_started}
+      # service_healthy: o agente conecta no MCP ao subir e cai se ele ainda não estiver ouvindo
+      mcp-tools: {condition: service_healthy}
+    restart: unless-stopped
 
 volumes:
   agent-data:
