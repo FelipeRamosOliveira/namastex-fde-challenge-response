@@ -47,12 +47,100 @@ _RE_IDADE = [
     re.compile(r"\bminha idade(?: e| eh|:)? (\d{1,3})\b"),
 ]
 _RE_CEP_TOKEN = re.compile(r"\[CEP_\d+\]")
-_RE_CEP_NUM = re.compile(r"(?<!\d)(\d{5}-?\d{3})(?!\d)")
+# "anos de carteira", "anos de casado": número de anos que não é a idade do condutor
+_RE_ANOS_DE_OUTRA_COISA = re.compile(
+    r"\d{1,3} anos (de|como) "
+    r"(carteira|habilitacao|cnh|casad|empresa|experiencia|motorista|direcao|uso|garantia)"
+)
+# "carro tem 12 anos", "veiculo com 8 anos": idade do carro, não do condutor
+_RE_IDADE_DO_CARRO = re.compile(r"\b(carro|veiculo|moto|ele)\b\s+(tem|com|de)\s+(\d{1,2}) anos")
+# ano que não é do carro: "nasci em 1985", "desde 2010", "habilitado em 2005"
+_RE_ANO_NAO_CARRO = re.compile(r"\b(nasci|nascido|nascida|desde|habilitad[oa]|carteira|cnh)\b[^.,;]{0,12}$")
+IDADE_MIN, IDADE_MAX = 16, 110
 
+MARCAS = {
+    "volkswagen",
+    "vw",
+    "chevrolet",
+    "gm",
+    "fiat",
+    "hyundai",
+    "toyota",
+    "honda",
+    "jeep",
+    "renault",
+    "ford",
+    "nissan",
+    "peugeot",
+    "citroen",
+    "kia",
+    "mitsubishi",
+    "caoa",
+    "chery",
+    "bmw",
+    "audi",
+    "mercedes",
+}
+MODELOS = {
+    "gol",
+    "polo",
+    "virtus",
+    "t-cross",
+    "nivus",
+    "fox",
+    "up",
+    "voyage",
+    "saveiro",
+    "jetta",
+    "onix",
+    "tracker",
+    "spin",
+    "prisma",
+    "celta",
+    "cruze",
+    "s10",
+    "argo",
+    "mobi",
+    "cronos",
+    "pulse",
+    "toro",
+    "uno",
+    "palio",
+    "strada",
+    "siena",
+    "hb20",
+    "creta",
+    "corolla",
+    "yaris",
+    "etios",
+    "hilux",
+    "civic",
+    "city",
+    "hr-v",
+    "fit",
+    "renegade",
+    "compass",
+    "kwid",
+    "sandero",
+    "duster",
+    "logan",
+    "ka",
+    "fiesta",
+    "ecosport",
+    "kicks",
+    "versa",
+    "sentra",
+    "tiggo",
+}
+_RE_PALAVRA_CARRO = re.compile(
+    r"\b(carro|veiculo|modelo|ano|automovel|" + "|".join(re.escape(w) for w in MARCAS | MODELOS) + r")\b"
+)
+
+# ordem importa: frases do premium antes de "completo"
 _PLANOS = {
+    "premium": ["premium", "mais completo", "top de linha", "o melhor"],
     "essencial": ["essencial", "basico", "mais barato", "mais em conta"],
     "completo": ["completo"],
-    "premium": ["premium", "mais completo de todos", "top"],
 }
 _INTENTS = {
     "pedido_humano": [
@@ -109,7 +197,7 @@ _INTENTS = {
     ],
     "saudacao": [r"^(oi|ola|bom dia|boa tarde|boa noite|eae|e ai)\b"],
 }
-_MIDIA = re.compile(r"^\[(documento|imagem|audio|áudio|video)\]", re.IGNORECASE)
+_MIDIA = re.compile(r"^\[(documento|document|imagem|image|audio|áudio|video|sticker)\]", re.IGNORECASE)
 
 
 def parse_data(t: str, hoje: date) -> date | None:
@@ -164,28 +252,47 @@ class RuleExtractor:
             ex.slots["data_inicio"] = data
         sem_datas = _RE_DATA_BR.sub(" ", _RE_DATA_ISO.sub(" ", t))
 
-        # idade: só com marcador explícito de pessoa, ou número solto quando perguntamos a idade
+        # idade: marcador explícito de pessoa, ou número solto quando perguntamos a idade.
+        # Números que são idade do carro ou "anos de carteira" ficam de fora.
+        excluidos = [m.span(3) for m in _RE_IDADE_DO_CARRO.finditer(sem_datas)]
+        excluidos += [m.span() for m in _RE_ANOS_DE_OUTRA_COISA.finditer(sem_datas)]
+
+        def fora(span: tuple[int, int]) -> bool:
+            return not any(a <= span[0] < b for a, b in excluidos)
+
+        idade = None
         for pat in _RE_IDADE:
-            if (m := pat.search(sem_datas)) and not re.search(
-                r"\b(carro|veiculo|moto)\b[^.]*" + m.group(0), sem_datas
-            ):
-                ex.slots["idade"] = int(m[1])
+            for m in pat.finditer(sem_datas):
+                if fora(m.span(1)):
+                    idade = int(m[1])
+                    break
+            if idade is not None:
                 break
         if (
-            "idade" not in ex.slots
+            idade is None
             and awaiting == "idade"
-            and (m := re.fullmatch(r"\D*(\d{2,3})\D*", sem_datas))
+            and (m := re.fullmatch(r"\D*?(\d{2,3})(?: anos)?\D*", sem_datas))
         ):
-            ex.slots["idade"] = int(m[1])
+            if fora(m.span(1)) and not _RE_ANOS_DE_OUTRA_COISA.search(sem_datas):
+                idade = int(m[1])
+        if idade is not None and IDADE_MIN <= idade <= IDADE_MAX:
+            ex.slots["idade"] = idade
 
-        # ano do veículo: ano de 4 dígitos fora de datas, plausível
-        anos = [int(a) for a in _RE_ANO.findall(sem_datas) if 1950 <= int(a) <= hoje.year + 1]
-        if anos:
-            ex.slots["veiculo_ano"] = anos[0]
+        # ano do veículo: 4 dígitos fora de datas, plausível, com contexto de carro
+        # (ou quando perguntamos o carro), e nunca depois de "nasci", "desde"...
+        for m in _RE_ANO.finditer(sem_datas):
+            ano = int(m[1])
+            antes = sem_datas[: m.start()]
+            if not (1950 <= ano <= hoje.year + 1) or _RE_ANO_NAO_CARRO.search(antes):
+                continue
+            if awaiting == "veiculo_ano" or _RE_PALAVRA_CARRO.search(sem_datas):
+                ex.slots["veiculo_ano"] = ano
+                break
 
-        # CEP: token do guardrail (o valor real fica no vault) ou CEP generalizado da Gold
-        if m := _RE_CEP_TOKEN.search(text):
-            ex.slots["cep"] = m.group(0)
+        # CEP: token do guardrail (o valor real fica no vault). Com dois, vale o último
+        # ("moro no X mas o carro dorme no Y"); a confirmação mostra a região ao lead.
+        if ceps := _RE_CEP_TOKEN.findall(text):
+            ex.slots["cep"] = ceps[-1]
 
         # plano
         for pid, words in _PLANOS.items():

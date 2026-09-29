@@ -18,6 +18,11 @@ from autoseguro.guardrails.pii import PiiKind, PiiVault, contains_pii, cpf_valid
         ("placa abc-1234", PiiKind.PLACA),
         ("CEP 26703-384", PiiKind.CEP),
         ("cep 01310100", PiiKind.CEP),
+        ("liga (21) 9 7224-2584", PiiKind.TELEFONE),
+        ("zap 21 9 7224 2584", PiiKind.TELEFONE),
+        ("fixo 3333-4444", PiiKind.TELEFONE),
+        ("cpf 12345678900", PiiKind.CPF),
+        ("meu nome é Ana", PiiKind.NOME),
     ],
 )
 def test_detecta_formatos(texto, tipo):
@@ -55,6 +60,26 @@ def test_mask_tokens_estaveis_por_conversa():
     assert v.latest(PiiKind.CEP) == "26703-384"
 
 
+def test_vault_so_guarda_original_do_cep():
+    v = PiiVault()
+    mask("cpf 389.083.863-43, email a.b@c.com, cep 26703-384, meu nome é Ana Souza", v)
+    guardado = " ".join(v.tokens.values())
+    assert "26703-384" in guardado
+    for dado in ("389", "a.b@c.com", "Ana", "Souza"):
+        assert dado not in guardado
+    assert v.reveal("[CPF_1]") is None and v.reveal("[CEP_1]") == "26703-384"
+
+
+def test_nome_declarado_e_lembrado_nas_mensagens_seguintes():
+    v = PiiVault()
+    assert mask("oi, meu nome é Ana Souza", v).text == "oi, meu nome é [NOME_1] [NOME_2]"
+    assert mask("a Ana aqui de novo", v).text == "a [NOME_1] aqui de novo"
+
+
+def test_sou_de_nao_vira_nome():
+    assert mask("sou de São Paulo").text == "sou de São Paulo"
+
+
 def test_mask_nao_remascara_tokens():
     v = PiiVault()
     t = mask("cep 26703-384", v).text
@@ -66,6 +91,6 @@ def test_mask_nomes_conhecidos():
     assert r.text == "Ola [NOME_1], tudo otimo!"
 
 
-def test_mask_dict_recursivo():
-    out = mask_dict({"a": ["email x.y@z.com"], "n": 3})
-    assert out == {"a": ["email [EMAIL_1]"], "n": 3}
+def test_mask_dict_recursivo_preserva_ids():
+    out = mask_dict({"a": ["email x.y@z.com"], "n": 3, "conversation_id": "5521972242584"})
+    assert out == {"a": ["email [EMAIL_1]"], "n": 3, "conversation_id": "5521972242584"}

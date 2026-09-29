@@ -33,6 +33,8 @@ curl -s localhost:8080/v1/messages -H 'content-type: application/json' \
 ```
 Trace (mascarado): `curl localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"`
 
+Se `CHANNEL_API_KEY` estiver definida no `.env`, envie também `-H "x-channel-key: $CHANNEL_API_KEY"` em `/v1/messages`.
+
 ### Sem Docker
 ```bash
 uv sync
@@ -55,6 +57,7 @@ Lead -> (Omni, etapa 6) -> FastAPI /v1/messages -> LangGraph
 
 MCP autoseguro-tools: consultar_planos, pre_validar, cotar, registrar_handoff, status_cotacao
 Cotar: timeout 2,5 s, hedging em 1,2 s, retry com jitter, circuit breaker, cache da resposta real
+Fachada: lock por conversa, máscara antes do grafo, id opaco, idempotência por message_id
 ```
 
 ## Decisões (resumo; detalhes em `docs/adr/`)
@@ -80,7 +83,7 @@ Cotar: timeout 2,5 s, hedging em 1,2 s, retry com jitter, circuit breaker, cache
 | `pronto_para_fechar` | Lead aceita a proposta: emissão de apólice e boleto é humana, como no dataset |
 
 ## Rastreio
-Cada turno gera eventos com `event_id`, `conversation_id` e `message_id`: `message_in` (com os tipos de PII detectados), `extracao`, `pre_validacao`, `cotacao` (com `quote_request_id`, `quote_id`, tentativas, status HTTP, latência, hedge e cache), `handoff` e `message_out`.
+Cada turno gera eventos com `event_id`, `conversation_id` (opaco: hash do id do canal) e `message_id`: `message_in` (com os tipos de PII detectados), `extracao`, `pre_validacao`, `cotacao` (com `quote_request_id`, `quote_id`, tentativas, status HTTP, latência, hedge e cache), `handoff` e `message_out`.
 
 ## Dados
 ```bash

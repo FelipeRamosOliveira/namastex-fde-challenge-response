@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     quote_max_attempts: int = 4  # total de chamadas por cotação
     quote_backoff_base_s: float = 0.2
     quote_backoff_max_s: float = 1.5
-    breaker_failure_threshold: int = 5  # falhas seguidas para abrir o circuito
+    breaker_failure_threshold: int = 3  # cotações falhas seguidas para abrir o circuito
     breaker_reset_s: float = 15.0  # tempo aberto antes de testar de novo
     planos_ttl_s: int = 3600
 
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     checkpoint_db: str = "data/runtime/checkpoints.sqlite"
     mcp_url: str | None = None  # sem URL: ferramentas MCP em processo
     trace_api_key: SecretStr | None = None  # protege GET /v1/conversations/{id}/trace
+    channel_api_key: SecretStr | None = None  # se definida, exigida em POST /v1/messages
 
     # --- Conversa ---
     max_turnos_sem_progresso: int = 6

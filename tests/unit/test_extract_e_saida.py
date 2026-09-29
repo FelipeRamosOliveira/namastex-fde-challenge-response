@@ -26,6 +26,16 @@ ex = RuleExtractor()
         ("pode ser hoje", "data_inicio", {"data_inicio": HOJE}),
         ("dia 15", "data_inicio", {"data_inicio": date(2026, 10, 15)}),
         ("15/11", "data_inicio", {"data_inicio": date(2026, 11, 15)}),
+        ("nasci em 1985", "idade", {}),
+        ("nasci em 1985", "veiculo_ano", {}),
+        ("tenho 5 anos de carteira", "idade", {}),
+        ("meu carro é um gol 2020 e tenho 30 anos", None, {"veiculo_ano": 2020, "idade": 30}),
+        ("o carro tem 8 anos e eu tenho 41 anos", None, {"idade": 41}),
+        ("quero o mais completo", None, {"plano_id": "premium"}),
+        ("tenho 150 anos", None, {}),
+        ("2019", "veiculo_ano", {"veiculo_ano": 2019}),
+        ("em 2019 eu mudei de emprego", None, {}),
+        ("moro no [CEP_1] mas o carro dorme no [CEP_2]", None, {"cep": "[CEP_2]"}),
     ],
 )
 async def test_extrai_slots(texto, awaiting, esperado):
@@ -43,6 +53,8 @@ async def test_extrai_slots(texto, awaiting, esperado):
         ("a Azul me ofereceu menos", "concorrente"),
         ("quais planos voces tem?", "pergunta_planos"),
         ("[audio] mensagem de voz (18s)", "midia"),
+        ("[image] foto.jpg", "midia"),
+        ("[document] cnh.pdf", "midia"),
     ],
 )
 async def test_intencoes(texto, intent):
@@ -110,3 +122,29 @@ def test_guardrail_saida_bloqueia(texto):
 
 def test_guardrail_saida_aceita_valor_da_api_sem_centavos():
     assert check_output("franquia de R$ 3.000", valores_permitidos([QUOTE])).ok
+
+
+def test_todos_os_textos_fixos_passam_no_guardrail():
+    """Nenhum template pode ser bloqueado pelo próprio guardrail (senão o lead recebe o fallback)."""
+    from autoseguro.agent import templates as T
+
+    planos = [{"nome": "Essencial", "coberturas": ["colisao"]}]
+    textos = [
+        T.saudacao() + T.perguntar(c, planos)
+        for c in ("veiculo_ano", "idade", "cep", "plano_id", "data_inicio")
+    ]
+    textos += [
+        T.confirmar(
+            {"veiculo_ano": 2020, "idade": 35, "plano_id": "completo", "data_inicio": "2026-10-15"}, "01"
+        )
+    ]
+    textos += list(T.HANDOFF.values()) + [
+        T.recusa("Idade acima do limite de aceitacao (75 anos)."),
+        T.POS_HANDOFF,
+        T.PEDIR_TEXTO,
+        T.CORRIGIR,
+        T.FALLBACK_SEGURO,
+    ]
+    for t in textos:
+        chk = check_output(t, set())
+        assert chk.ok, (t, chk.violacoes)

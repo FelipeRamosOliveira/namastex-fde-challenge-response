@@ -15,6 +15,7 @@ class KVStore(Protocol):
     async def set_json(self, key: str, value: Any, ttl_s: int | None = None) -> None: ...
     async def incr(self, key: str, ttl_s: int | None = None) -> int: ...
     async def delete(self, key: str) -> None: ...
+    async def set_if_absent(self, key: str, value: Any, ttl_s: int | None = None) -> bool: ...
     async def push(self, key: str, value: Any) -> None: ...
     async def list_all(self, key: str) -> list[Any]: ...
 
@@ -48,6 +49,12 @@ class MemoryStore:
     async def delete(self, key: str) -> None:
         self._d.pop(key, None)
 
+    async def set_if_absent(self, key: str, value: Any, ttl_s: int | None = None) -> bool:
+        if self._alive(key):
+            return False
+        await self.set_json(key, value, ttl_s)
+        return True
+
     async def push(self, key: str, value: Any) -> None:
         cur = (await self.get_json(key)) or []
         cur.append(value)
@@ -79,6 +86,9 @@ class RedisStore:
 
     async def delete(self, key: str) -> None:
         await self._r.delete(self._p + key)
+
+    async def set_if_absent(self, key: str, value: Any, ttl_s: int | None = None) -> bool:
+        return bool(await self._r.set(self._p + key, json.dumps(value), ex=ttl_s, nx=True))
 
     async def push(self, key: str, value: Any) -> None:
         await self._r.rpush(self._p + key, json.dumps(value, ensure_ascii=False))

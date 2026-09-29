@@ -85,6 +85,13 @@ def normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return p
 
 
+def _quote_valida(body: object) -> bool:
+    if not isinstance(body, dict):
+        return False
+    ok_num = all(isinstance(body.get(k), int | float) for k in ("premio_mensal", "franquia"))
+    return ok_num and isinstance(body.get("plano_nome"), str) and isinstance(body.get("coberturas"), list)
+
+
 def _seconds_to_midnight(now: datetime | None = None) -> int:
     now = now or datetime.now()
     tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -92,13 +99,27 @@ def _seconds_to_midnight(now: datetime | None = None) -> int:
 
 
 class CircuitBreaker:
+    """Conta COTAÇÕES que falharam (não tentativas), para o hedging não inflar a contagem.
+
+    fechado -> (N cotações falhas seguidas) -> aberto -> (reset_s) -> meio_aberto:
+    só UMA requisição passa como sonda (trava no KVStore), com uma única tentativa.
+    """
+
     def __init__(self, store: KVStore, threshold: int, reset_s: float, name: str = "quote") -> None:
         self.store, self.threshold, self.reset_s = store, threshold, reset_s
-        self._fail_key, self._open_key = f"breaker:{name}:fails", f"breaker:{name}:open_until"
+        self._fail_key = f"breaker:{name}:fails"
+        self._open_key = f"breaker:{name}:open_until"
+        self._probe_key = f"breaker:{name}:probe"
 
-    async def allow(self) -> bool:
+    async def acquire(self) -> str:
+        """'livre' (fechado), 'sonda' (meio-aberto, esta requisição testa) ou 'bloqueado'."""
         open_until = await self.store.get_json(self._open_key)
-        return open_until is None or time.time() >= open_until  # depois do prazo: meia-abertura
+        if open_until is None:
+            return "livre"
+        if time.time() < open_until:
+            return "bloqueado"
+        ok = await self.store.set_if_absent(self._probe_key, 1, ttl_s=max(1, int(self.reset_s)))
+        return "sonda" if ok else "bloqueado"
 
     async def state(self) -> str:
         open_until = await self.store.get_json(self._open_key)
@@ -107,13 +128,14 @@ class CircuitBreaker:
         return "aberto" if time.time() < open_until else "meio_aberto"
 
     async def success(self) -> None:
-        await self.store.delete(self._fail_key)
-        await self.store.delete(self._open_key)
+        for k in (self._fail_key, self._open_key, self._probe_key):
+            await self.store.delete(k)
 
-    async def failure(self) -> None:
+    async def failure(self, sonda: bool = False) -> None:
         n = await self.store.incr(self._fail_key)
-        if n >= self.threshold:
+        if sonda or n >= self.threshold:
             await self.store.set_json(self._open_key, time.time() + self.reset_s)
+            await self.store.delete(self._probe_key)
 
 
 class QuoteClient:
@@ -148,6 +170,9 @@ class QuoteClient:
             body = r.json()
         except ValueError:
             body = {}
+        if r.status_code == 200 and not _quote_valida(body):
+            # 200 com corpo quebrado (proxy, HTML): não é cotação; trata como falha transitória
+            raise _Transient("resposta_invalida", 200)
         return r.status_code, body
 
     async def cotar(self, payload: dict[str, Any]) -> QuoteOutcome:
@@ -163,8 +188,10 @@ class QuoteClient:
             out.latency_ms = round((time.perf_counter() - started) * 1000, 1)
             return out
 
-        if not await self.breaker.allow():
+        modo = await self.breaker.acquire()
+        if modo == "bloqueado":
             return QuoteOutcome(QuoteStatus.CIRCUITO_ABERTO, req_id, motivo="circuit breaker aberto")
+        max_attempts = 1 if modo == "sonda" else self.s.quote_max_attempts
 
         attempts: list[Attempt] = []
         inflight: dict[asyncio.Task, tuple[int, float, bool]] = {}
@@ -181,14 +208,14 @@ class QuoteClient:
         try:
             while final is None:
                 now = time.perf_counter()
-                if not inflight and launched < self.s.quote_max_attempts and now >= next_launch_at:
+                if not inflight and launched < max_attempts and now >= next_launch_at:
                     launch(hedge=False)
-                if not inflight and (launched >= self.s.quote_max_attempts):
+                if not inflight and launched >= max_attempts:
                     break
                 # tempo até o próximo evento: hedge ou fim do backoff
                 if inflight:
                     oldest = min(v[1] for v in inflight.values())
-                    can_hedge = launched < self.s.quote_max_attempts and len(inflight) == 1
+                    can_hedge = launched < max_attempts and len(inflight) == 1
                     wait = max(0.0, oldest + self.s.quote_hedge_after_s - now) if can_hedge else None
                     done, _ = await asyncio.wait(inflight, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
                     if not done:
@@ -201,13 +228,13 @@ class QuoteClient:
                             status, body = t.result()
                         except _Transient as e:
                             attempts.append(Attempt(n, e.http_status, lat, e.outcome, hedge))
-                            await self.breaker.failure()
                             if not inflight:
                                 k = len(
                                     [
                                         a
                                         for a in attempts
-                                        if a.outcome in ("erro_5xx", "timeout", "transporte")
+                                        if a.outcome
+                                        in ("erro_5xx", "timeout", "transporte", "resposta_invalida")
                                     ]
                                 )
                                 backoff = min(
@@ -246,6 +273,7 @@ class QuoteClient:
 
         if final is None:
             final = QuoteOutcome(QuoteStatus.INDISPONIVEL, req_id, motivo="tentativas esgotadas")
+            await self.breaker.failure(sonda=modo == "sonda")
         final.attempts = sorted(attempts, key=lambda a: a.n)
         final.latency_ms = round((time.perf_counter() - started) * 1000, 1)
 

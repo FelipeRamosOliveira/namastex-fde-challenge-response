@@ -28,9 +28,12 @@ from autoseguro.agent import templates as T
 from autoseguro.agent.extract import CAMPOS, Extractor, RuleExtractor
 from autoseguro.agent.gateway import ToolGateway
 from autoseguro.guardrails.output import check_output
-from autoseguro.guardrails.pii import PiiKind, PiiVault, mask
+from autoseguro.guardrails.pii import PiiVault, mask
 
 Stage = Literal["novo", "coletando", "confirmando", "cotado", "handoff"]
+
+
+_MIDIA_PT = {"image": "imagem", "document": "documento", "audio": "audio", "video": "video"}
 
 
 class AgentState(TypedDict, total=False):
@@ -79,7 +82,10 @@ def build_graph(
 
     async def planos() -> list[dict[str, Any]]:
         if not planos_cache:
-            planos_cache.update(await gateway.consultar_planos())
+            try:
+                planos_cache.update(await gateway.consultar_planos())
+            except Exception:  # noqa: BLE001 - sem lista de planos, a pergunta sai em versão curta
+                return []
         return planos_cache["planos"]
 
     # ------------------------------------------------------------------ entrada
@@ -87,7 +93,6 @@ def build_graph(
         vault = PiiVault.from_dict(state.get("vault"))
         inc = state["incoming"]
         masked = mask(inc["text"], vault)
-        cep_orig = vault.latest(PiiKind.CEP)
         upd: dict[str, Any] = {
             "turn_text": masked.text,
             "vault": vault.to_dict(),
@@ -112,8 +117,6 @@ def build_graph(
                 )
             ],
         }
-        if cep_orig:
-            upd["cep_prefixo"] = re.sub(r"\D", "", cep_orig)[:2]
         if not state.get("stage"):
             upd.update(stage="novo", slots={}, quotes=[], turnos_sem_progresso=0, midia_count=0, objecoes=0)
         return upd
@@ -126,8 +129,9 @@ def build_graph(
 
         hj = hoje()
         text = state["turn_text"]
-        if state.get("incoming", {}).get("message_type", "text") != "text" and not text.startswith("["):
-            text = f"[{state['incoming']['message_type']}] {text}"
+        mtype = state.get("incoming", {}).get("message_type", "text")
+        if mtype != "text" and not text.startswith("["):
+            text = f"[{_MIDIA_PT.get(mtype, mtype)}] {text}"
         ex = await extractor.extract(text, state.get("awaiting"), hj)
         events = [
             _event(
@@ -147,7 +151,8 @@ def build_graph(
             n = state.get("midia_count", 0) + 1
             if n >= 2:
                 return {**handoff("midia"), "midia_count": n}
-            ask = T.perguntar(state["awaiting"], await planos()) if state.get("awaiting") else ""
+            aw = state.get("awaiting")
+            ask = T.perguntar(aw, await planos()) if aw in CAMPOS else ""
             return {
                 "acao": "responder",
                 "reply": f"{T.PEDIR_TEXTO} {ask}".strip(),
@@ -171,23 +176,63 @@ def build_graph(
             if slots.get(k) != v:
                 novos[k] = v
         slots.update(novos)
+        vault = PiiVault.from_dict(state.get("vault"))
+        cep_orig = vault.reveal(slots["cep"]) if slots.get("cep") else None
+        cep_prefixo = re.sub(r"\D", "", cep_orig)[:2] if cep_orig else None
 
         # ---- pré-validação das regras (sem gastar chamada na /quote)
         if {"idade", "veiculo_ano"} & novos.keys():
-            pv = await gateway.pre_validar(idade=slots.get("idade"), veiculo_ano=slots.get("veiculo_ano"))
-            events.append(_event(state, "pre_validacao", **pv))
-            if not pv["ok"]:
-                return {**handoff("recusa_regra", pv["motivo"]), "slots": slots}
+            try:
+                pv = await gateway.pre_validar(idade=slots.get("idade"), veiculo_ano=slots.get("veiculo_ano"))
+            except Exception as e:  # noqa: BLE001 - a /quote devolve 422 se a regra falhar
+                events.append(_event(state, "pre_validacao_falhou", erro=type(e).__name__))
+            else:
+                events.append(_event(state, "pre_validacao", **pv))
+                if not pv["ok"]:
+                    return {**handoff("recusa_regra", pv["motivo"]), "slots": slots}
 
         progresso = bool(novos) or bool(ex.intents & {"aceite", "negacao", "pergunta_planos"})
         sem_prog = 0 if progresso else state.get("turnos_sem_progresso", 0) + 1
-        base = {"slots": slots, "turnos_sem_progresso": sem_prog, "events": events}
+        base = {
+            "slots": slots,
+            "turnos_sem_progresso": sem_prog,
+            "events": events,
+            "cep_prefixo": cep_prefixo,
+        }
+
+        def data_vencida() -> bool:
+            di = slots.get("data_inicio")
+            return bool(di) and date.fromisoformat(di) < hj
+
+        def pedir_nova_data() -> dict[str, Any]:
+            slots.pop("data_inicio", None)
+            return {
+                **base,
+                "slots": slots,
+                "acao": "responder",
+                "stage": "coletando",
+                "awaiting": "data_inicio",
+                "reply": "A data de início que combinamos já passou. " + T.perguntar("data_inicio"),
+            }
+
         if sem_prog >= max_turnos_sem_progresso:
             return {**handoff("sem_progresso"), "slots": slots}
 
         # ---- já cotado: fechar, trocar plano ou objeção
         if stage == "cotado":
             atual = (state.get("quote_atual") or {}).get("plano_id")
+            if {"idade", "veiculo_ano", "cep", "data_inicio"} & novos.keys():
+                # dado da cotação mudou: a cotação antiga não vale mais; confirma de novo
+                return {
+                    **base,
+                    "acao": "responder",
+                    "stage": "confirmando",
+                    "awaiting": "confirmacao",
+                    "quote_atual": None,
+                    "reply": "Atualizei seus dados. " + T.confirmar(slots, cep_prefixo),
+                }
+            if data_vencida() and (("plano_id" in novos) or ex.intents & {"objecao_preco", "aceite"}):
+                return pedir_nova_data()
             if "plano_id" in novos and novos["plano_id"] != atual:
                 return {**base, "acao": "cotar"}
             if ex.intents & {"objecao_preco", "concorrente"}:
@@ -215,7 +260,7 @@ def build_graph(
         # ---- confirmando
         if stage == "confirmando" and not novos:
             if "aceite" in ex.intents:
-                return {**base, "acao": "cotar"}
+                return pedir_nova_data() if data_vencida() else {**base, "acao": "cotar"}
             if "negacao" in ex.intents:
                 return {
                     **base,
@@ -224,7 +269,7 @@ def build_graph(
                     "awaiting": None,
                     "reply": T.CORRIGIR,
                 }
-            return {**base, "acao": "responder", "reply": T.confirmar(slots, state.get("cep_prefixo"))}
+            return {**base, "acao": "responder", "reply": T.confirmar(slots, cep_prefixo)}
 
         # ---- coletando: pergunta o que falta, na ordem
         faltando = [c for c in CAMPOS if not slots.get(c)]
@@ -247,7 +292,7 @@ def build_graph(
             "acao": "responder",
             "stage": "confirmando",
             "awaiting": "confirmacao",
-            "reply": prefix + T.confirmar(slots, state.get("cep_prefixo")),
+            "reply": prefix + T.confirmar(slots, cep_prefixo),
         }
 
     # ------------------------------------------------------------------ cotar
@@ -255,13 +300,20 @@ def build_graph(
         slots = state["slots"]
         vault = PiiVault.from_dict(state.get("vault"))
         cep = vault.reveal(slots["cep"]) if str(slots.get("cep", "")).startswith("[") else slots.get("cep")
-        out = await gateway.cotar(
-            plano_id=slots["plano_id"],
-            idade=int(slots["idade"]),
-            veiculo_ano=int(slots["veiculo_ano"]),
-            cep=cep,
-            data_inicio=slots.get("data_inicio"),
-        )
+        try:
+            out = await gateway.cotar(
+                plano_id=slots["plano_id"],
+                idade=int(slots["idade"]),
+                veiculo_ano=int(slots["veiculo_ano"]),
+                cep=cep,
+                data_inicio=slots.get("data_inicio"),
+            )
+        except Exception as e:  # noqa: BLE001 - ferramenta fora: sem preço, segue para humano
+            out = {
+                "status": "indisponivel",
+                "quote_request_id": None,
+                "motivo": f"ferramenta: {type(e).__name__}",
+            }
         ev = _event(
             state,
             "cotacao",
@@ -318,12 +370,19 @@ def build_graph(
             if q
             else None,
         }
-        item = await gateway.registrar_handoff(
-            conversation_id=state["conversation_id"],
-            motivo=hp["motivo"],
-            resumo="\n".join(resumo_linhas),
-            dados=dados,
-        )
+        try:
+            item = await gateway.registrar_handoff(
+                conversation_id=state["conversation_id"],
+                motivo=hp["motivo"],
+                resumo="\n".join(resumo_linhas),
+                dados=dados,
+            )
+        except Exception as e:  # noqa: BLE001 - lead não fica sem resposta; evento alerta a operação
+            item = {
+                "handoff_id": None,
+                "motivo": hp["motivo"],
+                "status": f"falha_registro:{type(e).__name__}",
+            }
         reply = T.recusa(hp.get("detalhe")) if hp["motivo"] == "recusa_regra" else T.HANDOFF[hp["motivo"]]
         return {
             "stage": "handoff",

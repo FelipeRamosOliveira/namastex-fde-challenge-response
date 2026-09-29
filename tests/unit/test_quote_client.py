@@ -10,7 +10,13 @@ from autoseguro.config import Settings
 from autoseguro.tools.quote_client import QuoteClient, QuoteStatus
 from autoseguro.tools.store import MemoryStore
 
-OK_BODY = {"plano_id": "completo", "plano_nome": "Completo", "premio_mensal": 209.9, "franquia": 3000}
+OK_BODY = {
+    "plano_id": "completo",
+    "plano_nome": "Completo",
+    "premio_mensal": 209.9,
+    "franquia": 3000,
+    "coberturas": ["colisao"],
+}
 PAYLOAD = {"plano_id": "completo", "idade": 35, "veiculo_ano": 2022}
 
 
@@ -106,24 +112,52 @@ async def test_cache_devolve_mesma_cotacao_sem_nova_chamada():
     assert calls["n"] == 1
 
 
-async def test_circuit_breaker_abre_e_nao_chama():
+async def test_circuit_breaker_conta_cotacoes_e_abre():
     h, calls = sequence(("500", 0))
-    c = make(h, breaker_failure_threshold=3, breaker_reset_s=60)
-    first = await c.cotar(PAYLOAD)
-    assert first.status is QuoteStatus.INDISPONIVEL
+    c = make(h, breaker_failure_threshold=2, breaker_reset_s=60)
+    assert (await c.cotar(PAYLOAD)).status is QuoteStatus.INDISPONIVEL
+    assert await c.breaker.state() == "fechado"  # 4 tentativas = 1 cotação falha
+    assert (await c.cotar({**PAYLOAD, "idade": 40})).status is QuoteStatus.INDISPONIVEL
     n = calls["n"]
-    second = await c.cotar({**PAYLOAD, "idade": 40})
-    assert second.status is QuoteStatus.CIRCUITO_ABERTO and calls["n"] == n
+    third = await c.cotar({**PAYLOAD, "idade": 41})
+    assert third.status is QuoteStatus.CIRCUITO_ABERTO and calls["n"] == n
     assert await c.breaker.state() == "aberto"
 
 
 async def test_circuit_breaker_meio_aberto_fecha_com_sucesso():
     h, _ = sequence(("500", 0), ("500", 0), ("500", 0), ("ok", 0))
-    c = make(h, breaker_failure_threshold=3, breaker_reset_s=0.05, quote_max_attempts=3)
+    c = make(h, breaker_failure_threshold=1, breaker_reset_s=0.05, quote_max_attempts=3)
     assert (await c.cotar(PAYLOAD)).status is QuoteStatus.INDISPONIVEL
     await asyncio.sleep(0.06)
     assert (await c.cotar(PAYLOAD)).status is QuoteStatus.OK
     assert await c.breaker.state() == "fechado"
+
+
+async def test_meio_aberto_deixa_passar_uma_unica_sonda():
+    h, calls = sequence(("500", 0))
+    c = make(h, breaker_failure_threshold=1, breaker_reset_s=1)
+    await c.cotar(PAYLOAD)
+    await asyncio.sleep(1.05)
+    n = calls["n"]
+    outs = await asyncio.gather(*[c.cotar({**PAYLOAD, "idade": 30 + i}) for i in range(10)])
+    assert calls["n"] - n == 1  # uma sonda, com uma tentativa
+    assert sum(o.status is QuoteStatus.CIRCUITO_ABERTO for o in outs) == 9
+    assert await c.breaker.state() == "aberto"  # sonda falhou: reabre
+
+
+async def test_200_com_corpo_invalido_nao_vira_cotacao_nem_cache():
+    calls = {"n": 0}
+
+    async def h(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(200, text="<html>proxy</html>")
+        return httpx.Response(200, json=OK_BODY)
+
+    c = make(h)
+    out = await c.cotar(PAYLOAD)
+    assert out.status is QuoteStatus.OK and out.quote == OK_BODY
+    assert out.attempts[0].outcome == "resposta_invalida"
 
 
 @pytest.mark.parametrize("cep", ["26703384", "26703-384"])

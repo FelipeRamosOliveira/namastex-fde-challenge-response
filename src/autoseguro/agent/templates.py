@@ -60,6 +60,8 @@ def perguntar(campo: str, planos: list[dict[str, Any]] | None = None) -> str:
                 f"- *{p['nome']}*: {', '.join(COBERTURAS.get(c, c) for c in p['coberturas'])}"
                 for p in planos or []
             ]
+            if not linhas:
+                return "Qual plano você quer cotar: Essencial, Completo ou Premium?"
             return "Temos 3 planos:\n" + "\n".join(linhas) + "\nQual deles você quer cotar?"
         case "data_inicio":
             return "A partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10)."

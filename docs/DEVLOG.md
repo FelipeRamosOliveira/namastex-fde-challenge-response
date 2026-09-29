@@ -17,4 +17,17 @@ Diário por sessão. Para cada uma: objetivo, o que a IA propôs, o que foi acei
 - Gold gerada com a API real a falha zero, em vez de recalcular preço em Python (regra de ouro 2).
 - Docker Hub bloqueado no ambiente de nuvem da IA: `docker compose config` validado, mas o `up` completo roda na máquina do Felipe.
 
-**Resultado:** 86 testes passando (unitários e integração contra a API original), lint limpo.
+**Revisão independente (subagente que não escreveu o código)**
+Achou 12 problemas, 10 reproduzidos. Todos corrigidos com teste de regressão:
+- Crítico: mensagens em rajada na mesma conversa perdiam dados (último a gravar vence). Lock por conversa.
+- CEP usado na cotação diferente do mostrado na confirmação quando a mensagem tinha dois CEPs.
+- Telefone com o 9 separado, fixo sem DDD, CPF sem pontuação com dígito inválido e nome declarado passavam sem máscara.
+- Id da conversa (telefone no Omni) era mascarado na fila, quebrando o roteamento, e ficava exposto nos eventos. Id opaco.
+- Extração: "nasci em 1985" virava ano do carro; "5 anos de carteira" virava idade; "o mais completo" virava Completo.
+- Idade fora da faixa derrubava o turno (HTTP 500); mídia enviada por `message_type` image/document não era detectada.
+- Data de início vencida era cotada ao retomar no dia seguinte; mudança de dado depois da cotação mantinha a cotação velha.
+- 200 com corpo inválido virava cotação e ia para o cache; meia-abertura do breaker deixava passar todo mundo.
+- API: chave do canal opcional, `compare_digest`, limite do `message_id`, idempotência por `message_id`, porta do MCP só local.
+- Achado por um teste novo: a saudação caía no fallback porque o guardrail lia "aqui é o assistente" como nome. Regex corrigida e teste que passa todos os textos fixos pelo guardrail.
+
+**Resultado:** 120 testes passando (unitários e integração contra a API original), lint limpo.

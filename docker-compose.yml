@@ -29,7 +29,7 @@ services:
   mcp-tools:
     build: .
     command: ["python", "-m", "autoseguro.tools.mcp_server"]
-    ports: ["8100:8100"]
+    ports: ["127.0.0.1:8100:8100"]  # só local: ferramentas sem autenticação
     environment:
       QUOTE_API_URL: http://quote-api:8000
       REDIS_URL: redis://redis:6379/0

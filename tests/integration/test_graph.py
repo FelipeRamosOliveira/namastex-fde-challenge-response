@@ -23,7 +23,9 @@ def cfg(url, tmp_path, **kw):
 async def conversa(agent, cid, msgs):
     outs = []
     for m in msgs:
-        outs.append(await agent.handle(cid, m))
+        out = await agent.handle(cid, m)
+        assert "Desculpa, tive um problema" not in out["reply"], (m, out)  # guardrail não bloqueou nada
+        outs.append(out)
     return outs
 
 
@@ -40,6 +42,8 @@ FELIZ = [
 async def test_caminho_feliz_valor_igual_api(stable_quote_url, tmp_path):
     async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
         outs = await conversa(ag, "c1", FELIZ)
+        assert "Qual é o modelo e o ano" in outs[0]["reply"]  # saudação não pode cair no fallback
+        assert all("Desculpa, tive um problema" not in o["reply"] for o in outs)
         assert outs[-1]["stage"] == "confirmando"
         assert "Está certo?" in outs[-1]["reply"]
         cot = await ag.handle("c1", "sim")
@@ -162,4 +166,107 @@ async def test_trace_tem_ids_e_tentativas(stable_quote_url, tmp_path):
     assert {"message_in", "extracao", "pre_validacao", "cotacao", "message_out"} <= set(tipos)
     cot = next(e for e in t["events"] if e["type"] == "cotacao")
     assert cot["quote_request_id"].startswith("qr_") and cot["attempts"]
-    assert all(e["event_id"] and e["conversation_id"] == "c10" for e in t["events"])
+    assert all(e["event_id"] and e["conversation_id"] == t["conversation_ref"] for e in t["events"])
+    assert t["conversation_ref"].startswith("conv_")
+
+
+async def test_rajada_na_mesma_conversa_nao_perde_dados(stable_quote_url, tmp_path):
+    import asyncio
+
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await ag.handle("c11", "oi")
+        await asyncio.gather(
+            ag.handle("c11", "é um corolla 2022"),
+            ag.handle("c11", f"tenho 35 anos, cpf {CPF}"),
+            ag.handle("c11", "cep 01310-100"),
+        )
+        t = await ag.trace("c11")
+    assert {"veiculo_ano", "idade", "cep"} <= t["slots"].keys()
+    assert len([m for m in t["transcript"] if m["role"] == "lead"]) == 4
+
+
+async def test_cotacao_usa_o_cep_confirmado(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await conversa(ag, "c12", ["oi", "Gol 2021", "tenho 40 anos"])
+        r = await ag.handle("c12", "moro no 21000-000 mas o carro dorme no 01310-100")
+        await conversa(ag, "c12", ["essencial", "hoje"])
+        t = await ag.trace("c12")
+        assert t["slots"]["cep"] == "01xxx-xxx"
+        r = await ag.handle("c12", "sim")
+    direto = httpx.post(
+        stable_quote_url + "/quote",
+        json={
+            "plano_id": "essencial",
+            "idade": 40,
+            "veiculo_ano": 2021,
+            "cep": "01310-100",
+            "data_inicio": date.today().isoformat(),
+        },
+    ).json()
+    assert brl(direto["premio_mensal"]) in r["reply"]
+
+
+async def test_retomada_no_dia_seguinte_pede_nova_data(stable_quote_url, tmp_path):
+    from datetime import timedelta
+
+    s = cfg(stable_quote_url, tmp_path)
+    async with AutoSeguroAgent(s) as ag:
+        await conversa(ag, "c13", FELIZ)  # "hoje" = data de início
+    amanha = date.today() + timedelta(days=1)
+    async with AutoSeguroAgent(s, hoje=lambda: amanha) as ag2:
+        r = await ag2.handle("c13", "sim")
+    assert r["stage"] == "coletando" and "já passou" in r["reply"]
+
+
+async def test_mudanca_de_dado_depois_da_cotacao_reconfirma(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await conversa(ag, "c14", [*FELIZ, "sim"])
+        r = await ag.handle("c14", "na verdade tenho 62 anos")
+        assert r["stage"] == "confirmando" and "Idade 62" in r["reply"] and r["quote_id"] is None
+        r = await ag.handle("c14", "sim")
+    direto = httpx.post(
+        stable_quote_url + "/quote",
+        json={
+            "plano_id": "completo",
+            "idade": 62,
+            "veiculo_ano": 2020,
+            "cep": "01310-100",
+            "data_inicio": date.today().isoformat(),
+        },
+    ).json()
+    assert brl(direto["premio_mensal"]) in r["reply"]
+
+
+async def test_imagem_e_documento_pelo_message_type(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await ag.handle("c15", "oi")
+        r1 = await ag.handle("c15", "foto.jpg", message_type="image")
+        assert "por escrito" in r1["reply"]
+        r2 = await ag.handle("c15", "cnh.pdf", message_type="document")
+    assert r2["handoff"]["motivo"] == "midia"
+
+
+async def test_idade_absurda_nao_quebra(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await conversa(ag, "c16", ["oi", "Gol 2021"])
+        r = await ag.handle("c16", "tenho 150 anos")
+    assert r["stage"] == "coletando" and "idade" in r["reply"]
+
+
+async def test_texto_bruto_nao_vai_para_o_checkpoint(stable_quote_url, tmp_path):
+    s = cfg(stable_quote_url, tmp_path)
+    async with AutoSeguroAgent(s) as ag:
+        await ag.handle("5521972242584", f"oi, meu nome é Ana Souza, cpf {CPF}, email ana.s@gmail.com")
+        await ag.handle("5521972242584", "quero falar com um atendente")
+    blob = (tmp_path / "ck.sqlite").read_bytes()
+    for sensivel in (CPF, "ana.s@gmail.com", "Souza", "5521972242584"):
+        assert sensivel.encode() not in blob
+
+
+async def test_mensagem_repetida_nao_reprocessa(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        a = await ag.handle("c17", "oi", message_id="m1")
+        b = await ag.handle("c17", "oi", message_id="m1")
+        t = await ag.trace("c17")
+    assert b["reply"] == a["reply"] and b.get("duplicada")
+    assert len(t["transcript"]) == 2
