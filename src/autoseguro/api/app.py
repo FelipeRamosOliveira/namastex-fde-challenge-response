@@ -24,7 +24,13 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with AutoSeguroAgent(get_settings()) as agent:
+    s = get_settings()
+    faltando = [n for n, v in (("CHANNEL_API_KEY", s.channel_api_key), ("VAULT_KEY", s.vault_key)) if not v]
+    if s.exigir_segredos and faltando:
+        raise RuntimeError(f"EXIGIR_SEGREDOS=true e faltam no .env: {', '.join(faltando)}")
+    if not s.channel_api_key:
+        logging.getLogger("autoseguro").warning("CHANNEL_API_KEY vazia: canal aberto (só dev)")
+    async with AutoSeguroAgent(s) as agent:
         app.state.agent = agent
         yield
 
@@ -44,7 +50,12 @@ def agent() -> AutoSeguroAgent:
 
 
 def _confere(chave, recebida: str | None) -> bool:
-    return bool(chave) and recebida is not None and hmac.compare_digest(recebida, chave.get_secret_value())
+    # bytes: compare_digest com str não ASCII levanta TypeError (500 em vez de 401)
+    return (
+        bool(chave)
+        and recebida is not None
+        and hmac.compare_digest(recebida.encode(), chave.get_secret_value().encode())
+    )
 
 
 def exige_chave(x_api_key: str | None = Header(default=None)) -> None:
@@ -65,8 +76,16 @@ async def health():
     return {"status": "ok"}
 
 
+def _nao_omni(conversation_id: str) -> None:
+    """Conversas do Omni só entram pelo /omni/webhook (autenticado pelo provider). Sem isso, quem
+    souber o telefone escreveria na conversa real e leria as mensagens ativas dela."""
+    if conversation_id.startswith("omni:"):
+        raise HTTPException(403, "conversas do Omni entram só por /omni/webhook")
+
+
 @app.post("/v1/messages", dependencies=[Depends(exige_chave_canal)])
 async def receber(m: MensagemIn, ag: AutoSeguroAgent = Depends(agent)):
+    _nao_omni(m.conversation_id)
     return await ag.handle(m.conversation_id, m.text, m.message_type, m.message_id)
 
 
@@ -83,6 +102,8 @@ def exige_bearer_omni(authorization: str | None = Header(default=None)) -> None:
 async def omni_webhook(p: OmniWebhookPayload, ag: AutoSeguroAgent = Depends(agent)):
     """Provider `webhook` do Omni, modo round-trip: responde {"reply": ...} na hora.
     Mensagens depois (cotação em segundo plano, vendedor) saem por POST /api/v2/messages/send do Omni."""
+    if not p.e_mensagem():
+        return {"parts": []}  # reação, recibo, status: não é mensagem do lead
     texto, tipo = p.texto_e_tipo()
     out = await ag.handle(p.conversation_id(), texto, tipo, message_id=f"omni_{p.event.id}")
     if ag.omni is not None:
@@ -93,6 +114,7 @@ async def omni_webhook(p: OmniWebhookPayload, ag: AutoSeguroAgent = Depends(agen
 @app.get("/v1/conversations/{conversation_id}/outbox", dependencies=[Depends(exige_chave_canal)])
 async def outbox(conversation_id: str, depois_de: int = 0, ag: AutoSeguroAgent = Depends(agent)):
     """Mensagens ativas (cotação em segundo plano, humano, devolução) para o canal entregar."""
+    _nao_omni(conversation_id)
     return await ag.mensagens_ativas(conversation_id, depois_de)
 
 
@@ -103,7 +125,8 @@ class AcaoOperador(BaseModel):
 
 @app.post("/v1/conversations/{conversation_id}/operador", dependencies=[Depends(exige_chave)])
 async def operador(conversation_id: str, a: AcaoOperador, ag: AutoSeguroAgent = Depends(agent)):
-    """Painel do vendedor: responder o lead, devolver a conversa ao bot ou encerrar."""
+    """Painel do vendedor: responder o lead, devolver a conversa ao bot ou encerrar.
+    Use o `conversation_ref` (conv_...) que aparece em /v1/handoffs: o telefone não vai na URL."""
     try:
         return await ag.operador(conversation_id, a.acao, a.texto)
     except ValueError as e:

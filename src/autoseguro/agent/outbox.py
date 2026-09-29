@@ -29,13 +29,26 @@ class Outbox:
         self.http = http or httpx.AsyncClient(timeout=5)
 
     async def push(
-        self, conversation_ref: str, conversation_id: str, texto: str, origem: str
+        self,
+        conversation_ref: str,
+        texto: str,
+        origem: str,
+        conversation_id: str | None = None,
+        stage: str | None = None,
+        motivo_handoff: str | None = None,
     ) -> dict[str, Any]:
+        """Entrega `texto` ao canal e guarda uma cópia mascarada.
+
+        O que fica guardado não tem o id do canal (no Omni é o telefone). O texto chega aqui já
+        aprovado pelo guardrail de saída (bot e vendedor), então não carrega PII do lead nem R$ fora
+        da API. O id do canal só vai no POST ao webhook, que precisa dele para rotear."""
         item = {
             "message_id": f"out_{uuid.uuid4().hex[:12]}",
-            "conversation_id": conversation_id,
+            "conversation_ref": conversation_ref,
             "texto": texto,
             "origem": origem,  # agente | humano
+            "stage": stage,
+            "motivo_handoff": motivo_handoff,
             "criado_em": datetime.now().isoformat(timespec="seconds"),
             "entregue_webhook": False,
             "entregue_omni": False,
@@ -48,7 +61,9 @@ class Outbox:
                 pass
         if self.webhook_url:
             try:
-                r = await self.http.post(self.webhook_url, json=item)
+                r = await self.http.post(
+                    self.webhook_url, json={**item, "texto": texto, "conversation_id": conversation_id}
+                )
                 item["entregue_webhook"] = r.status_code < 300
             except httpx.HTTPError:
                 pass  # fica no outbox para o canal buscar

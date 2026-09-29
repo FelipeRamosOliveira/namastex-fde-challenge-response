@@ -4,11 +4,13 @@ Métricas:
 - ponta_a_ponta: conversas elegíveis que chegaram a uma cotação
 - acerto_preco: cotações cujo prêmio mostrado é igual ao da API (Gold) para o plano pedido
 - handoff_correto: conversas terminadas em humano com motivo coerente com o caso
-  (inelegível -> recusa_regra; ganho -> pronto_para_fechar; perdido -> objecao_preco)
+  (inelegível -> recusa_regra; ganho -> pronto_para_fechar; perdido -> objecao_preco).
+  Handoff por `cotacao_indisponivel` (API fora mesmo depois das tentativas em segundo plano)
+  não entra na conta de coerência: é contado à parte.
 - vazamento_pii: respostas do agente com PII (meta: 0)
 - latência por turno (p50, p95) e cotações que saíram em segundo plano
 
-Uso (agente no ar, ex.: Docker):
+Uso (agente no ar, ex.: Docker; lê CHANNEL_API_KEY do ambiente ou --channel-key):
     uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 50
     uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 5 --lead fastagent
 Sem --url, sobe o agente em processo (precisa da quote-api em QUOTE_API_URL).
@@ -19,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import statistics
 import time
@@ -39,6 +42,9 @@ GOLD = ROOT / "data" / "gold" / "cases.jsonl"
 Enviar = Callable[[str, str], Awaitable[dict[str, Any]]]
 Ativas = Callable[[str], Awaitable[list[dict[str, Any]]]]
 
+# espera pela mensagem ativa: cobre as tentativas em segundo plano padrão (5 + 20 + 60 s) com folga
+ESPERA_ATIVA_S = 100.0
+
 MOTIVO_ESPERADO = {
     "ganho": "pronto_para_fechar",
     "perdido": "objecao_preco",
@@ -47,28 +53,36 @@ MOTIVO_ESPERADO = {
 
 
 async def conversar(
-    p: Persona, lead: Lead, enviar: Enviar, ativas: Ativas, max_turnos: int = 16, espera_ativa_s: float = 30.0
+    p: Persona,
+    lead: Lead,
+    enviar: Enviar,
+    ativas: Ativas,
+    max_turnos: int = 16,
+    espera_ativa_s: float = ESPERA_ATIVA_S,
 ) -> dict[str, Any]:
     cid = f"sim-{p.case_id}-{int(time.time() * 1000)}"
     msg = await lead.abrir()
-    turnos, lat, respostas, estado, vistas = [], [], [], None, 0
+    turnos, lat, respostas, estado, vistas, motivo = [], [], [], None, 0, None
     for _ in range(max_turnos):
         t0 = time.perf_counter()
         r = await enviar(cid, msg)
         lat.append(round((time.perf_counter() - t0) * 1000, 1))
         estado, bot = r.get("stage"), r.get("reply", "")
+        motivo = (r.get("handoff") or {}).get("motivo") or motivo
         respostas.append(bot)
         turnos.append({"lead": msg, "bot": bot, "stage": estado})
         if estado == "aguardando_cotacao":  # espera a mensagem ativa (cotação em segundo plano)
             fim = time.perf_counter() + espera_ativa_s
             while time.perf_counter() < fim:
                 novas = (await ativas(cid))[vistas:]
-                if novas:
+                if novas:  # o item traz o estágio e o motivo do handoff (sem adivinhar pelo texto)
                     vistas += len(novas)
-                    bot = novas[-1]["texto"]
+                    ult = novas[-1]
+                    bot = ult["texto"]
                     respostas.append(bot)
                     turnos.append({"ativa": bot})
-                    estado = "handoff" if "atendente" in bot else "cotado"
+                    estado = ult.get("stage") or estado
+                    motivo = ult.get("motivo_handoff") or motivo
                     break
                 await asyncio.sleep(0.2)
         if estado == "handoff":
@@ -78,7 +92,6 @@ async def conversar(
             break
         msg = nxt
     cotacoes = [m for m in respostas if "Cotação pronta" in m]
-    handoff = r.get("handoff") or {}
     return {
         "conversation_id": cid,
         "persona": p,
@@ -86,7 +99,7 @@ async def conversar(
         "latencias_ms": lat,
         "respostas": respostas,
         "estado_final": estado,
-        "motivo_handoff": handoff.get("motivo"),
+        "motivo_handoff": motivo if estado == "handoff" else None,
         "cotacoes": cotacoes,
     }
 
@@ -107,11 +120,12 @@ def metricas(resultados: list[dict[str, Any]]) -> dict[str, Any]:
                 esp = r["persona"].premio_esperado(plano)
                 precos_ok += esp is not None and brl(esp) == valor
     handoffs = [r for r in resultados if r["estado_final"] == "handoff"]
+    julgaveis = [r for r in handoffs if r["motivo_handoff"] != "cotacao_indisponivel"]
     coerentes = 0
-    for r in handoffs:
+    for r in julgaveis:
         p = r["persona"]
         esperado = "recusa_regra" if not p.elegivel else MOTIVO_ESPERADO.get(p.desfecho)
-        coerentes += r["motivo_handoff"] == esperado or r["motivo_handoff"] == "cotacao_indisponivel"
+        coerentes += r["motivo_handoff"] == esperado
     vaz = sum(1 for r in resultados for m in r["respostas"] if scan(m))
     lat = sorted(x for r in resultados for x in r["latencias_ms"])
     q = (lambda f: round(lat[min(len(lat) - 1, int(len(lat) * f))], 1)) if lat else (lambda f: None)
@@ -123,7 +137,9 @@ def metricas(resultados: list[dict[str, Any]]) -> dict[str, Any]:
         "acerto_preco": f"{precos_ok}/{precos_total}",
         "taxa_acerto_preco": round(precos_ok / max(1, precos_total), 3),
         "handoffs": dict(Counter(r["motivo_handoff"] for r in handoffs)),
-        "handoff_coerente": f"{coerentes}/{len(handoffs)}",
+        "handoff_coerente": f"{coerentes}/{len(julgaveis)}",
+        "handoff_api_indisponivel": len(handoffs) - len(julgaveis),
+        "sem_desfecho": sum(1 for r in resultados if r["estado_final"] == "aguardando_cotacao"),
         "cotacao_em_segundo_plano": sum(1 for r in resultados for t in r["turnos"] if "ativa" in t),
         "vazamento_pii_respostas": vaz,
         "latencia_turno_ms": {
@@ -184,10 +200,12 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--lead", choices=["roteiro", "fastagent"], default="roteiro")
     ap.add_argument("--saida", default=str(ROOT / "docs" / "avaliacao.json"))
+    ap.add_argument("--channel-key", default=os.environ.get("CHANNEL_API_KEY"), help="x-channel-key")
     a = ap.parse_args()
+    headers = {"x-channel-key": a.channel_key} if a.channel_key else {}
 
     async def run():
-        async with httpx.AsyncClient(base_url=a.url, timeout=60) as c:
+        async with httpx.AsyncClient(base_url=a.url, timeout=60, headers=headers) as c:
 
             async def enviar(cid, texto):
                 return (await c.post("/v1/messages", json={"conversation_id": cid, "text": texto})).json()

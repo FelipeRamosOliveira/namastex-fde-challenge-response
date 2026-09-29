@@ -10,10 +10,10 @@ Avaliação com 300 conversas da Gold contra a quote-api original, instabilidade
 | Critério do desafio | Resultado |
 |---|---|
 | Funciona de ponta a ponta | 210/210 leads elegíveis chegaram à cotação; preço igual ao da API em 284/284 |
-| O que faz quando a /quote falha | Timeout curto + hedging + retry + circuit breaker; se ainda falhar, avisa o lead e tenta de novo em segundo plano. Com 50% de falha: 72/72 cotados, 29 em segundo plano, 0 preço inventado |
+| O que faz quando a /quote falha | Timeout curto + hedging + retry + circuit breaker; se ainda falhar, avisa o lead e tenta de novo em segundo plano. Com 50% de falha: 72/72 cotados, 18 em segundo plano, 0 preço inventado, 0 conversa sem desfecho |
 | Critério de handoff explícito | 8 motivos em código (tabela abaixo); 258/258 coerentes com o caso |
 | Rastreio | Evento com id e status para cada mensagem, cotação e tentativa; checkpoints do LangGraph; log de execução completa em `docs/execucao/` |
-| Dados sensíveis | Máscara antes de LLM, log, trace e fila; 0 PII em 26.470 mensagens da Silver e nas respostas; CEP cifrado no checkpoint |
+| Dados sensíveis | Máscara antes de LLM, log, trace e fila; 0 PII em 26.470 mensagens da Silver e nas respostas; CEP cifrado no checkpoint (chave com rotação); texto do vendedor passa pelo guardrail |
 | Uso de IA | `docs/DEVLOG.md` (o que a IA propôs e o que foi aceito ou rejeitado) e `ai-logs/` |
 
 ## Regras de ouro
@@ -28,7 +28,8 @@ Avaliação com 300 conversas da Gold contra a quote-api original, instabilidade
 ### Com Docker (ambiente de simulação completo)
 ```bash
 git clone --recurse-submodules <este-repo> && cd autoseguro-agent
-cp .env.example .env          # preencha GROQ_API_KEY (etapa 4) e TRACE_API_KEY
+cp .env.example .env          # preencha GROQ_API_KEY, TRACE_API_KEY, CHANNEL_API_KEY e VAULT_KEY
+                              # (no Docker o agente não sobe sem CHANNEL_API_KEY e VAULT_KEY)
 docker compose up --build
 ```
 | Serviço | Porta | O que é |
@@ -46,12 +47,12 @@ A pasta `src/` é montada nos containers `agent-api` e `mcp-tools`, que recarreg
 
 Conversa de exemplo:
 ```bash
-curl -s localhost:8080/v1/messages -H 'content-type: application/json' \
+curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" \
   -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
 ```
 Trace (mascarado): `curl localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"`
 
-Se `CHANNEL_API_KEY` estiver definida no `.env`, envie também `-H "x-channel-key: $CHANNEL_API_KEY"` em `/v1/messages`.
+Fora do Docker, sem `CHANNEL_API_KEY`, o canal fica aberto (só para desenvolvimento). Conversas do Omni (`omni:...`) só entram por `/omni/webhook`.
 
 ### Sem Docker
 ```bash
@@ -107,13 +108,15 @@ Fachada: lock por conversa, máscara antes do grafo, id opaco, idempotência por
 ## Endpoints
 | Rota | Quem usa | Chave |
 |---|---|---|
-| `POST /v1/messages` | Canal (Omni) | `x-channel-key` se `CHANNEL_API_KEY` definida |
+| `POST /v1/messages` | Canal genérico (ids `omni:` recusados) | `x-channel-key` (`CHANNEL_API_KEY`) |
 | `GET /v1/conversations/{id}/outbox` | Canal: mensagens ativas (cotação em segundo plano, humano) | idem |
 | `GET /v1/handoffs` | Vendedor: fila mascarada | `x-api-key` (`TRACE_API_KEY`) |
-| `POST /v1/conversations/{id}/operador` | Vendedor: `responder`, `devolver`, `encerrar` | idem |
+| `POST /v1/conversations/{id}/operador` | Vendedor: `responder` (passa pelo guardrail), `devolver`, `encerrar` | idem |
 | `GET /v1/conversations/{id}/trace` | Rastreio mascarado | idem |
 | `GET /v1/conversations/{id}/historico` | Checkpoints do LangGraph (viagem no tempo) | idem |
 | `POST /omni/webhook` | Omni (provider webhook) | `Authorization: Bearer` (`OMNI_PROVIDER_KEY`) |
+
+Nas rotas do vendedor e de rastreio, `{id}` pode ser o `conversation_ref` (`conv_...`) que aparece na fila: o telefone não precisa ir na URL.
 
 ## Log de execução completa
 `docs/execucao/feliz.md` (conversa do início ao fim até fechar) e `docs/execucao/resiliencia.md` (a /quote cai depois da confirmação; o lead é avisado e recebe a cotação em segundo plano quando ela volta). Os `.jsonl` ao lado têm os eventos crus. Regerar: `uv run python scripts/exportar_execucao.py`.

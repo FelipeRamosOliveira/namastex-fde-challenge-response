@@ -29,31 +29,45 @@ class PiiKind(StrEnum):
 RETER_ORIGINAL = {PiiKind.CEP}  # únicos originais guardados no vault
 
 # Criptografia do original retido (Fernet). Configurada na subida via VAULT_KEY.
+# VAULT_KEY aceita várias chaves separadas por vírgula (rotação): a primeira cifra,
+# todas servem para abrir. Dado cifrado com chave que não está mais na lista fica ilegível
+# (tratado como ausente: o agente pede o dado de novo), nunca derruba a conversa.
 _cipher = None
 
 
 def configurar_chave_vault(chave: str | None) -> None:
     global _cipher
     if chave:
-        from cryptography.fernet import Fernet
+        from cryptography.fernet import Fernet, MultiFernet
 
-        _cipher = Fernet(chave.encode())
+        _cipher = MultiFernet([Fernet(k.strip().encode()) for k in chave.split(",") if k.strip()])
     else:
         _cipher = None
 
 
-def _cifrar(valor: str) -> str:
+def cifrar_texto(valor: str) -> str:
+    """Cifra um valor sensível para guardar (sem chave, fica em claro: só desenvolvimento)."""
     return "enc:" + _cipher.encrypt(valor.encode()).decode() if _cipher else valor
 
 
-def _abrir(valor: str) -> str | None:
+def abrir_texto(valor: str) -> str | None:
+    """Abre o que `cifrar_texto` gravou. None se ilegível (sem chave ou chave rotacionada)."""
     if valor.startswith("h:"):
         return None
     if valor.startswith("enc:"):
         if _cipher is None:
-            return None  # sem a chave, o original é ilegível
-        return _cipher.decrypt(valor[4:].encode()).decode()
+            return None
+        from cryptography.fernet import InvalidToken
+
+        try:
+            return _cipher.decrypt(valor[4:].encode()).decode()
+        except InvalidToken:
+            return None
     return valor
+
+
+_cifrar = cifrar_texto
+_abrir = abrir_texto
 
 
 _SEP = r"[\s.-]?"
@@ -242,6 +256,16 @@ def mask(text: str, vault: PiiVault | None = None, names: list[str] | None = Non
         last = e.end
     out.append(text[last:])
     return MaskResult(text="".join(out), entities=ents)
+
+
+def nomes_conhecidos(text: str, vault: PiiVault) -> list[str]:
+    """Palavras do texto que são um nome já dito nesta conversa (comparação por hash)."""
+    conhecidos = vault.name_hashes()
+    return [
+        m.group(0)
+        for m in re.finditer(r"[A-Za-zÀ-ÿ]{3,}", text)
+        if _h(_normalize(PiiKind.NOME, m.group(0))) in conhecidos
+    ]
 
 
 def contains_pii(text: str, names: list[str] | None = None) -> bool:

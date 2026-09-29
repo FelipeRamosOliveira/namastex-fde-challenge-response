@@ -65,6 +65,12 @@ class OmniWebhookPayload(BaseModel):
         # instância + chat: o mesmo número em duas instâncias são conversas diferentes
         return f"omni:{self.instance.id}:{self.chat.id}"
 
+    def e_mensagem(self) -> bool:
+        """Só mensagem recebida vira turno; reação sem texto (só emoji) é ignorada."""
+        if self.event.type != "message.received":
+            return False
+        return bool(self.content.text and self.content.text.strip()) or not self.content.emoji
+
     def texto_e_tipo(self) -> tuple[str, str]:
         if self.content.text and self.content.text.strip():
             return self.content.text, "text"

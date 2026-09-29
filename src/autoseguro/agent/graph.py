@@ -37,6 +37,7 @@ from autoseguro.guardrails.pii import PiiVault, mask
 
 Stage = Literal["novo", "coletando", "confirmando", "cotado", "aguardando_cotacao", "handoff", "encerrado"]
 EVENTO_RETENTAR = "retentar_cotacao"
+CAMPOS_COTACAO = {"plano_id", "idade", "veiculo_ano", "cep", "data_inicio"}
 
 
 _MIDIA_PT = {"image": "imagem", "document": "documento", "audio": "audio", "video": "video"}
@@ -210,9 +211,6 @@ def build_graph(
             return handoff("pedido_humano")
         if "fora_de_escopo" in ex.intents:
             return handoff("fora_de_escopo")
-        if stage == "aguardando_cotacao":  # a nova tentativa já está agendada; só tranquiliza o lead
-            return {"acao": "responder", "reply": T.AINDA_TENTANDO, "events": events}
-
         # ---- incorpora dados novos
         slots = dict(state.get("slots") or {})
         novos: dict[str, Any] = {}
@@ -267,6 +265,21 @@ def build_graph(
                 "awaiting": "data_inicio",
                 "reply": "A data de início que combinamos já passou. " + T.perguntar("data_inicio"),
             }
+
+        # ---- esperando a cotação em segundo plano
+        if stage == "aguardando_cotacao":
+            if CAMPOS_COTACAO & novos.keys():
+                # o lead corrigiu um dado: a tentativa pendente não vale mais (ela desiste ao ver o
+                # novo estágio); confirma de novo antes de cotar com os dados certos
+                return {
+                    **base,
+                    "acao": "responder",
+                    "stage": "confirmando",
+                    "awaiting": "confirmacao",
+                    "tentativas_fundo": 0,
+                    "reply": "Atualizei seus dados. " + T.confirmar(slots, cep_prefixo),
+                }
+            return {**base, "acao": "responder", "reply": T.AINDA_TENTANDO, "turnos_sem_progresso": 0}
 
         if sem_prog >= max_turnos_sem_progresso:
             return {**handoff("sem_progresso"), "slots": slots}
@@ -363,6 +376,16 @@ def build_graph(
         slots = state["slots"]
         vault = PiiVault.from_dict(state.get("vault"))
         cep = vault.reveal(slots["cep"]) if str(slots.get("cep", "")).startswith("[") else slots.get("cep")
+        if not cep:  # original ilegível (VAULT_KEY trocada): nunca cota sem CEP; pede de novo
+            slots = {k: v for k, v in slots.items() if k != "cep"}
+            return {
+                "slots": slots,
+                "stage": "coletando",
+                "awaiting": "cep",
+                "acao": "responder",
+                "reply": "Preciso confirmar seu CEP de novo. " + T.perguntar("cep"),
+                "events": [_event(state, "cep_ilegivel")],
+            }
         try:
             out = await gateway.cotar(
                 plano_id=slots["plano_id"],

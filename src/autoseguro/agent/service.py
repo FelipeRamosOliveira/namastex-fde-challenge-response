@@ -20,6 +20,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import re
 import time
 import uuid
 from collections import OrderedDict
@@ -40,7 +41,15 @@ from autoseguro.agent.outbox import Outbox
 from autoseguro.agent.redator import Redator
 from autoseguro.channels.omni import OmniDelivery
 from autoseguro.config import Settings
-from autoseguro.guardrails.pii import PiiVault, configurar_chave_vault, mask
+from autoseguro.guardrails.output import check_output
+from autoseguro.guardrails.pii import (
+    PiiVault,
+    abrir_texto,
+    cifrar_texto,
+    configurar_chave_vault,
+    mask,
+    nomes_conhecidos,
+)
 from autoseguro.llm.client import LLMClient, providers_from_settings
 from autoseguro.tools.handoff import HandoffQueue
 from autoseguro.tools.mcp_server import Services, build_server
@@ -51,10 +60,21 @@ log = logging.getLogger("autoseguro")
 trace_log = logging.getLogger("autoseguro.trace")
 PENDENTES_KEY = "retry:pendentes"
 NO_PAUSADO = ("aguardar_humano",)
+_REF = re.compile(r"conv_[0-9a-f]{16}")
 
 
 def conversation_ref(conversation_id: str) -> str:
     return "conv_" + hashlib.sha256(conversation_id.encode()).hexdigest()[:16]
+
+
+def resolver_ref(id_ou_ref: str) -> str:
+    """Operador e rastreio usam o `conversation_ref` que a fila mostra (sem telefone na URL);
+    o id do canal também é aceito."""
+    return id_ou_ref if _REF.fullmatch(id_ou_ref) else conversation_ref(id_ou_ref)
+
+
+def canal_key(ref: str) -> str:
+    return f"canal:{ref}"
 
 
 def _agora() -> str:
@@ -153,6 +173,8 @@ class AutoSeguroAgent:
             if (ref, message_id) in self._dedup:
                 return {**self._dedup[(ref, message_id)], "duplicada": True}
             snap = await self.graph.aget_state(cfg)
+            if not snap or not snap.values:  # id do canal cifrado: só para rotear mensagens ativas
+                await self.store.set_json(canal_key(ref), cifrar_texto(conversation_id))
             vault = PiiVault.from_dict((snap.values or {}).get("vault") if snap else None)
             masked = mask(text, vault)
 
@@ -172,7 +194,7 @@ class AutoSeguroAgent:
                     },
                     cfg,
                 )
-                await self._talvez_agendar(ref, conversation_id, st)
+                await self._talvez_agendar(ref, st)
             self._log_eventos(st, antes)
             out = self._resposta(conversation_id, ref, message_id, st)
             self._dedup[(ref, message_id)] = out
@@ -239,14 +261,17 @@ class AutoSeguroAgent:
         return {**st, "reply": T.POS_HANDOFF}
 
     # ------------------------------------------------------------------ cotação em segundo plano
-    async def _talvez_agendar(self, ref: str, conversation_id: str, st: dict[str, Any]) -> None:
+    # Tentativas pendentes: um campo por conversa num hash (gravação atômica, sem ler-alterar-gravar),
+    # removido ou substituído só depois que a tentativa termina. A tentativa roda dentro do lock da
+    # conversa (distribuído no Redis) e só se a entrada ainda existir com o mesmo horário: com várias
+    # réplicas reagendando na subida, só a primeira executa; as outras encontram a entrada já trocada.
+    async def _talvez_agendar(self, ref: str, st: dict[str, Any]) -> None:
         delay = st.get("agendar_retry")
         if delay is None:
             return
-        pend = (await self.store.get_json(PENDENTES_KEY)) or {}
-        pend[ref] = {"conversation_id": conversation_id, "due": time.time() + delay}
-        await self.store.set_json(PENDENTES_KEY, pend)
-        self._spawn(self._retentar(ref, conversation_id, delay))
+        due = time.time() + delay
+        await self.store.hset(PENDENTES_KEY, ref, {"due": due})
+        self._spawn(self._retentar(ref, due))
 
     def _spawn(self, coro) -> None:
         t = asyncio.create_task(coro)
@@ -254,20 +279,24 @@ class AutoSeguroAgent:
         t.add_done_callback(self._tasks.discard)
 
     async def _reagendar_pendentes(self) -> None:
-        pend = (await self.store.get_json(PENDENTES_KEY)) or {}
-        for ref, item in pend.items():
-            self._spawn(self._retentar(ref, item["conversation_id"], max(0.0, item["due"] - time.time())))
+        for ref, item in (await self.store.hgetall(PENDENTES_KEY)).items():
+            self._spawn(self._retentar(ref, item["due"]))
 
-    async def _retentar(self, ref: str, conversation_id: str, delay: float) -> None:
-        await asyncio.sleep(delay)
+    async def _canal(self, ref: str) -> str | None:
+        v = await self.store.get_json(canal_key(ref))
+        return abrir_texto(v) if v else None
+
+    async def _retentar(self, ref: str, due: float) -> None:
+        await asyncio.sleep(max(0.0, due - time.time()))
         cfg = self._cfg(ref)
         async with self.store.lock(f"conv:{ref}"):
-            pend = (await self.store.get_json(PENDENTES_KEY)) or {}
-            pend.pop(ref, None)
-            await self.store.set_json(PENDENTES_KEY, pend)
+            atual = (await self.store.hgetall(PENDENTES_KEY)).get(ref)
+            if not atual or abs(atual["due"] - due) > 1e-3:
+                return  # já executada (por esta ou outra réplica) ou substituída por uma mais nova
             snap = await self.graph.aget_state(cfg)
             if not snap or (snap.values or {}).get("stage") != "aguardando_cotacao":
-                return  # a conversa seguiu (ex.: lead pediu humano)
+                await self.store.hdel(PENDENTES_KEY, ref)
+                return  # a conversa seguiu (ex.: lead corrigiu um dado ou pediu humano)
             antes = len((snap.values or {}).get("events", []))
             st = await self.graph.ainvoke(
                 {
@@ -282,13 +311,26 @@ class AutoSeguroAgent:
             )
             self._log_eventos(st, antes)
             if st.get("reply"):
-                await self.outbox.push(ref, conversation_id, st["reply"], "agente")
-            await self._talvez_agendar(ref, conversation_id, st)
+                await self._entregar(ref, st, "agente")
+            if st.get("agendar_retry") is None:
+                await self.store.hdel(PENDENTES_KEY, ref)
+            else:
+                await self._talvez_agendar(ref, st)  # substitui a entrada de uma vez
+
+    async def _entregar(self, ref: str, st: dict[str, Any], origem: str, texto: str | None = None):
+        return await self.outbox.push(
+            ref,
+            texto if texto is not None else st["reply"],
+            origem,
+            conversation_id=await self._canal(ref),
+            stage=st.get("stage"),
+            motivo_handoff=(st.get("handoff") or {}).get("motivo"),
+        )
 
     # ------------------------------------------------------------------ operador humano
     async def operador(self, conversation_id: str, acao: str, texto: str | None = None) -> dict[str, Any]:
         """acao: responder (texto ao lead), devolver (conversa volta ao bot) ou encerrar."""
-        ref = conversation_ref(conversation_id)
+        ref = resolver_ref(conversation_id)
         cfg = self._cfg(ref)
         async with self.store.lock(f"conv:{ref}"):
             snap = await self.graph.aget_state(cfg)
@@ -297,8 +339,15 @@ class AutoSeguroAgent:
             if acao == "responder":
                 if not texto:
                     raise ValueError("texto obrigatório")
+                # o vendedor passa pelo guardrail do bot: sem PII do lead e sem R$ fora das cotações
+                # da API. Nome só bloqueia se for o do lead ("Sou o Marcos" é o vendedor se apresentando)
                 vault = PiiVault.from_dict(snap.values.get("vault"))
-                item = await self.outbox.push(ref, conversation_id, texto, "humano")
+                chk = check_output(texto, T.valores_permitidos(snap.values.get("quotes") or []))
+                viol = [v for v in chk.violacoes if v != "pii:NOME"]
+                viol += ["pii:NOME_DO_LEAD"] * bool(nomes_conhecidos(texto, vault))
+                if viol:
+                    raise ValueError(f"texto bloqueado pelo guardrail: {', '.join(viol)}")
+                item = await self._entregar(ref, snap.values, "humano", texto)
                 await self.graph.aupdate_state(
                     cfg,
                     {
@@ -327,19 +376,15 @@ class AutoSeguroAgent:
             if acao not in ("devolver", "encerrar"):
                 raise ValueError("acao inválida")
             st = await self.graph.ainvoke(Command(resume={"acao": acao}), cfg)
-            item = (
-                await self.outbox.push(ref, conversation_id, st["reply"], "agente")
-                if st.get("reply")
-                else None
-            )
+            item = await self._entregar(ref, st, "agente") if st.get("reply") else None
             return {"ok": True, "stage": st.get("stage"), "entregue": item}
 
     # ------------------------------------------------------------------ leitura
     async def mensagens_ativas(self, conversation_id: str, depois_de: int = 0) -> list[dict[str, Any]]:
-        return await self.outbox.listar(conversation_ref(conversation_id), depois_de)
+        return await self.outbox.listar(resolver_ref(conversation_id), depois_de)
 
     async def trace(self, conversation_id: str) -> dict[str, Any] | None:
-        ref = conversation_ref(conversation_id)
+        ref = resolver_ref(conversation_id)
         snap = await self.graph.aget_state(self._cfg(ref))
         if not snap or not snap.values:
             return None
@@ -360,7 +405,7 @@ class AutoSeguroAgent:
     async def historico(self, conversation_id: str) -> list[dict[str, Any]]:
         """Viagem no tempo: cada checkpoint da conversa (passo do grafo), do mais antigo ao mais novo.
         `executou` é o nó que rodou para chegar a este checkpoint (o `next` do checkpoint anterior)."""
-        ref = conversation_ref(conversation_id)
+        ref = resolver_ref(conversation_id)
         snaps = [h async for h in self.graph.aget_state_history(self._cfg(ref))]
         passos, anterior = [], ()
         for h in reversed(snaps):

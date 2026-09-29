@@ -1,10 +1,10 @@
 # Execução completa: feliz
 
-Gerado em 29/09/2026 15:20 por `scripts/exportar_execucao.py` contra a quote-api original (instabilidade padrão: 20% falha, 10% lenta). Texto do lead mascarado no rastreio.
+Gerado em 29/09/2026 16:11 por `scripts/exportar_execucao.py` contra a quote-api original (instabilidade padrão: 20% falha, 10% lenta). Texto do lead mascarado no rastreio.
 
 - conversation_ref: `conv_8131a9137eb2c80b`
 - estado final: `handoff`
-- handoff: `pronto_para_fechar` (`ho_ff6e72b56c3a`)
+- handoff: `pronto_para_fechar` (`ho_91383a2554dc`)
 
 ## Conversa (como o lead viu)
 
@@ -56,61 +56,61 @@ Quer fechar com esse plano ou prefere ver outro?
 
 ## Conversa (como ficou no rastreio, mascarada)
 
-- **lead** `msg_6a7fac965e81`: Oi, queria fazer um seguro pro meu carro
-- **agente** `msg_ec166862dcce`: Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro. Qual é o modelo e o ano do seu carro?
-- **lead** `msg_9cf40ec01bc1`: é um Toyota Corolla 2019
-- **agente** `msg_83a6726907b2`: E qual é a sua idade?
-- **lead** `msg_f9fff1a92bc1`: tenho 35 anos, meu cpf é [CPF_1]
-- **agente** `msg_2beefe522c07`: Qual o CEP de onde o carro fica à noite?
-- **lead** `msg_d44d61128d77`: o carro dorme no cep [CEP_1]
-- **agente** `msg_98c983056591`: Temos 3 planos: / - *Essencial*: colisão, roubo, furto / - *Completo*: colisão, roubo, furto, danos a terceiros, vidros / - *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h / Qual deles você quer cotar?
-- **lead** `msg_f6681b61895f`: quero o completo
-- **agente** `msg_0a2cb9fc3b84`: A partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).
-- **lead** `msg_e70c5123d3af`: pode ser a partir do dia 15
-- **agente** `msg_f625c8c36432`: Só pra confirmar antes de cotar: / - Carro ano 2019 / - Idade 35 anos / - CEP da região 26xxx / - Plano Completo / - Início em 15/10/2026 / Está certo? (sim / não)
-- **lead** `msg_3244987dc2fa`: sim
-- **agente** `msg_70701a3afe02`: Cotação pronta! Plano *Completo*: R$ 313,80 por mês. / Coberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00. / Atenção: roubo e furto só passam a valer depois de 30 dias de carência. / Como o início é no meio do mês, o primeiro pagamento é proporcional: R$ 172,08 (17 de 31 dias). Os meses seguintes são integrais. / Quer fechar com esse plano ou prefere ver outro?
-- **lead** `msg_6705142a3968`: fechado!
-- **agente** `msg_f9ee7ce54e25`: Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.
+- **lead** `msg_a8a13e2bf8a1`: Oi, queria fazer um seguro pro meu carro
+- **agente** `msg_7b704abdf5c9`: Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro. Qual é o modelo e o ano do seu carro?
+- **lead** `msg_8b0cf9f09ee4`: é um Toyota Corolla 2019
+- **agente** `msg_f6e913b5afdc`: E qual é a sua idade?
+- **lead** `msg_b15746217b39`: tenho 35 anos, meu cpf é [CPF_1]
+- **agente** `msg_f3ade0469443`: Qual o CEP de onde o carro fica à noite?
+- **lead** `msg_ceab14641bed`: o carro dorme no cep [CEP_1]
+- **agente** `msg_ec957a3b18db`: Temos 3 planos: / - *Essencial*: colisão, roubo, furto / - *Completo*: colisão, roubo, furto, danos a terceiros, vidros / - *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h / Qual deles você quer cotar?
+- **lead** `msg_341da972d654`: quero o completo
+- **agente** `msg_8a98776a298a`: A partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).
+- **lead** `msg_d47899443b57`: pode ser a partir do dia 15
+- **agente** `msg_02e00df67022`: Só pra confirmar antes de cotar: / - Carro ano 2019 / - Idade 35 anos / - CEP da região 26xxx / - Plano Completo / - Início em 15/10/2026 / Está certo? (sim / não)
+- **lead** `msg_9f38be650905`: sim
+- **agente** `msg_9d8a90452747`: Cotação pronta! Plano *Completo*: R$ 313,80 por mês. / Coberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00. / Atenção: roubo e furto só passam a valer depois de 30 dias de carência. / Como o início é no meio do mês, o primeiro pagamento é proporcional: R$ 172,08 (17 de 31 dias). Os meses seguintes são integrais. / Quer fechar com esse plano ou prefere ver outro?
+- **lead** `msg_2f96aad1c879`: fechado!
+- **agente** `msg_355d2c921e4b`: Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.
 
 ## Cotações
 
 | quote_request_id | status | quote_id | prêmio | tentativas (resultado/HTTP/ms) | cache |
 |---|---|---|---|---|---|
-| `qr_b531d71cfdec` | ok | `q_f9480ff10428` | 313.8 | ok/200/4 | False |
+| `qr_a5053c64d450` | ok | `q_1a978c97c19c` | 313.8 | erro_5xx/503/3, ok/200/4 | False |
 
 ## Eventos
 
 | hora | tipo | message_id | detalhe |
 |---|---|---|---|
-| 15:20:51.579 | message_in | `msg_6a7fac965e81` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.582 | extracao | `msg_6a7fac965e81` | {"slots": {}, "intents": ["saudacao"], "fonte": "regras"} |
-| 15:20:51.585 | message_out | `msg_6a7fac965e81` | {"out_message_id": "msg_ec166862dcce", "stage": "coletando"} |
-| 15:20:51.595 | message_in | `msg_9cf40ec01bc1` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.596 | extracao | `msg_9cf40ec01bc1` | {"slots": {"veiculo_ano": "2019"}, "intents": [], "fonte": "regras"} |
-| 15:20:51.600 | pre_validacao | `msg_9cf40ec01bc1` | {"ok": true, "regra": null, "motivo": null} |
-| 15:20:51.602 | message_out | `msg_9cf40ec01bc1` | {"out_message_id": "msg_83a6726907b2", "stage": "coletando"} |
-| 15:20:51.610 | message_in | `msg_f9fff1a92bc1` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.611 | extracao | `msg_f9fff1a92bc1` | {"slots": {"idade": "35"}, "intents": [], "fonte": "regras"} |
-| 15:20:51.613 | pre_validacao | `msg_f9fff1a92bc1` | {"ok": true, "regra": null, "motivo": null} |
-| 15:20:51.614 | message_out | `msg_f9fff1a92bc1` | {"out_message_id": "msg_2beefe522c07", "stage": "coletando"} |
-| 15:20:51.625 | message_in | `msg_d44d61128d77` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.626 | extracao | `msg_d44d61128d77` | {"slots": {"cep": "[CEP_1]"}, "intents": [], "fonte": "regras"} |
-| 15:20:51.627 | message_out | `msg_d44d61128d77` | {"out_message_id": "msg_98c983056591", "stage": "coletando"} |
-| 15:20:51.638 | message_in | `msg_f6681b61895f` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.639 | extracao | `msg_f6681b61895f` | {"slots": {"plano_id": "completo"}, "intents": [], "fonte": "regras"} |
-| 15:20:51.640 | message_out | `msg_f6681b61895f` | {"out_message_id": "msg_0a2cb9fc3b84", "stage": "coletando"} |
-| 15:20:51.648 | message_in | `msg_e70c5123d3af` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.649 | extracao | `msg_e70c5123d3af` | {"slots": {"data_inicio": "2026-10-15"}, "intents": ["aceite"], "fonte": "regras"} |
-| 15:20:51.650 | message_out | `msg_e70c5123d3af` | {"out_message_id": "msg_f625c8c36432", "stage": "confirmando"} |
-| 15:20:51.660 | message_in | `msg_3244987dc2fa` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.660 | extracao | `msg_3244987dc2fa` | {"slots": {}, "intents": ["aceite"], "fonte": "regras"} |
-| 15:20:51.670 | cotacao | `msg_3244987dc2fa` | {"quote_request_id": "qr_b531d71cfdec", "status": "ok", "quote_id": "q_f9480ff10428", "from_cache": false, "latency_ms": 4.2, "premio_mensal": 313.8} |
-| 15:20:51.671 | message_out | `msg_3244987dc2fa` | {"out_message_id": "msg_70701a3afe02", "stage": "cotado"} |
-| 15:20:51.681 | message_in | `msg_6705142a3968` | {"pii_detectada": [], "message_type": "text"} |
-| 15:20:51.681 | extracao | `msg_6705142a3968` | {"slots": {}, "intents": ["aceite"], "fonte": "regras"} |
-| 15:20:51.687 | handoff | `msg_6705142a3968` | {"motivo": "pronto_para_fechar", "handoff_id": "ho_ff6e72b56c3a", "detalhe": null} |
-| 15:20:51.687 | message_out | `msg_6705142a3968` | {"out_message_id": "msg_f9ee7ce54e25", "stage": "handoff"} |
+| 16:11:05.328 | message_in | `msg_a8a13e2bf8a1` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.330 | extracao | `msg_a8a13e2bf8a1` | {"slots": {}, "intents": ["saudacao"], "fonte": "regras"} |
+| 16:11:05.334 | message_out | `msg_a8a13e2bf8a1` | {"out_message_id": "msg_7b704abdf5c9", "stage": "coletando"} |
+| 16:11:05.345 | message_in | `msg_8b0cf9f09ee4` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.346 | extracao | `msg_8b0cf9f09ee4` | {"slots": {"veiculo_ano": "2019"}, "intents": [], "fonte": "regras"} |
+| 16:11:05.350 | pre_validacao | `msg_8b0cf9f09ee4` | {"ok": true, "regra": null, "motivo": null} |
+| 16:11:05.351 | message_out | `msg_8b0cf9f09ee4` | {"out_message_id": "msg_f6e913b5afdc", "stage": "coletando"} |
+| 16:11:05.360 | message_in | `msg_b15746217b39` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.361 | extracao | `msg_b15746217b39` | {"slots": {"idade": "35"}, "intents": [], "fonte": "regras"} |
+| 16:11:05.362 | pre_validacao | `msg_b15746217b39` | {"ok": true, "regra": null, "motivo": null} |
+| 16:11:05.364 | message_out | `msg_b15746217b39` | {"out_message_id": "msg_f3ade0469443", "stage": "coletando"} |
+| 16:11:05.372 | message_in | `msg_ceab14641bed` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.373 | extracao | `msg_ceab14641bed` | {"slots": {"cep": "[CEP_1]"}, "intents": [], "fonte": "regras"} |
+| 16:11:05.374 | message_out | `msg_ceab14641bed` | {"out_message_id": "msg_ec957a3b18db", "stage": "coletando"} |
+| 16:11:05.382 | message_in | `msg_341da972d654` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.383 | extracao | `msg_341da972d654` | {"slots": {"plano_id": "completo"}, "intents": [], "fonte": "regras"} |
+| 16:11:05.384 | message_out | `msg_341da972d654` | {"out_message_id": "msg_8a98776a298a", "stage": "coletando"} |
+| 16:11:05.393 | message_in | `msg_d47899443b57` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.394 | extracao | `msg_d47899443b57` | {"slots": {"data_inicio": "2026-10-15"}, "intents": ["aceite"], "fonte": "regras"} |
+| 16:11:05.395 | message_out | `msg_d47899443b57` | {"out_message_id": "msg_02e00df67022", "stage": "confirmando"} |
+| 16:11:05.405 | message_in | `msg_9f38be650905` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.405 | extracao | `msg_9f38be650905` | {"slots": {}, "intents": ["aceite"], "fonte": "regras"} |
+| 16:11:05.510 | cotacao | `msg_9f38be650905` | {"quote_request_id": "qr_a5053c64d450", "status": "ok", "quote_id": "q_1a978c97c19c", "from_cache": false, "latency_ms": 99.1, "premio_mensal": 313.8} |
+| 16:11:05.512 | message_out | `msg_9f38be650905` | {"out_message_id": "msg_9d8a90452747", "stage": "cotado"} |
+| 16:11:05.522 | message_in | `msg_2f96aad1c879` | {"pii_detectada": [], "message_type": "text"} |
+| 16:11:05.523 | extracao | `msg_2f96aad1c879` | {"slots": {}, "intents": ["aceite"], "fonte": "regras"} |
+| 16:11:05.528 | handoff | `msg_2f96aad1c879` | {"motivo": "pronto_para_fechar", "handoff_id": "ho_91383a2554dc", "detalhe": null} |
+| 16:11:05.529 | message_out | `msg_2f96aad1c879` | {"out_message_id": "msg_355d2c921e4b", "stage": "handoff"} |
 
 ## Checkpoints do LangGraph
 

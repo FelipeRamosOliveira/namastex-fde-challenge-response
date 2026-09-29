@@ -20,6 +20,9 @@ class KVStore(Protocol):
     async def set_if_absent(self, key: str, value: Any, ttl_s: int | None = None) -> bool: ...
     async def push(self, key: str, value: Any) -> None: ...
     async def list_all(self, key: str) -> list[Any]: ...
+    async def hset(self, key: str, field: str, value: Any) -> None: ...
+    async def hdel(self, key: str, field: str) -> None: ...
+    async def hgetall(self, key: str) -> dict[str, Any]: ...
     def lock(self, key: str, timeout_s: float = 60) -> AbstractAsyncContextManager: ...
 
 
@@ -72,6 +75,18 @@ class MemoryStore:
     async def list_all(self, key: str) -> list[Any]:
         return (await self.get_json(key)) or []
 
+    # hash: cada campo é gravado sozinho (sem ler-alterar-gravar o mapa inteiro)
+    async def hset(self, key: str, field: str, value: Any) -> None:
+        cur = self._d.setdefault(key, ({}, None))[0]
+        cur[field] = json.loads(json.dumps(value))
+
+    async def hdel(self, key: str, field: str) -> None:
+        if key in self._d:
+            self._d[key][0].pop(field, None)
+
+    async def hgetall(self, key: str) -> dict[str, Any]:
+        return dict(self._d[key][0]) if key in self._d else {}
+
 
 class RedisStore:
     def __init__(self, url: str | None = None, prefix: str = "autoseguro:", client=None) -> None:
@@ -110,6 +125,15 @@ class RedisStore:
 
     async def list_all(self, key: str) -> list[Any]:
         return [json.loads(x) for x in await self._r.lrange(self._p + key, 0, -1)]
+
+    async def hset(self, key: str, field: str, value: Any) -> None:
+        await self._r.hset(self._p + key, field, json.dumps(value, ensure_ascii=False))
+
+    async def hdel(self, key: str, field: str) -> None:
+        await self._r.hdel(self._p + key, field)
+
+    async def hgetall(self, key: str) -> dict[str, Any]:
+        return {k: json.loads(v) for k, v in (await self._r.hgetall(self._p + key)).items()}
 
 
 def make_store(redis_url: str | None) -> KVStore:

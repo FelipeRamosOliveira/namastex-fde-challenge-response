@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     mcp_url: str | None = None  # sem URL: ferramentas MCP em processo
     trace_api_key: SecretStr | None = None  # protege GET /v1/conversations/{id}/trace
     channel_api_key: SecretStr | None = None  # se definida, exigida em POST /v1/messages
+    exigir_segredos: bool = False  # true (Docker): não sobe sem CHANNEL_API_KEY e VAULT_KEY
     vault_key: SecretStr | None = None  # chave Fernet: cifra o CEP guardado no checkpoint
 
     # --- Conversa ---

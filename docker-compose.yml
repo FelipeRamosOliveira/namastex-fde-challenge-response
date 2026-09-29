@@ -53,6 +53,8 @@ services:
       QUOTE_API_URL: http://quote-api:8000
       REDIS_URL: redis://redis:6379/0
       CHECKPOINT_DB: /app/data/runtime/checkpoints.sqlite
+      # porta 8080 publicada: não sobe sem CHANNEL_API_KEY e VAULT_KEY no .env
+      EXIGIR_SEGREDOS: "true"
     volumes:
       - agent-data:/app/data/runtime
     healthcheck:

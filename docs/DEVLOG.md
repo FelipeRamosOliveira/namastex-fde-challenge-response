@@ -61,4 +61,18 @@ Felipe subiu o `docker compose` no Windows; a IA testou pelo navegador do app Cl
 - Avaliação na Gold (300 conversas) e estresse (50% de falha): resultados em `docs/avaliacao.md`.
 - Teste ao vivo da etapa 5 no Docker (via navegador do app): handoff pausado, mensagem do lead durante a pausa, vendedor respondendo, devolução ao bot retomando no dado que faltava, segundo "devolver" recusado (409), 30 checkpoints no histórico, CPF mascarado na fila e no trace. Ajuste: a frase-ponte do LLM saía antes da saudação num "oi" simples; removida no primeiro turno.
 - Felipe corrigiu o `docker-compose.yml` (healthchecks e `agent-api` esperando o `mcp-tools` ficar saudável): o agente caía ao subir antes do MCP. Commit dele trazido para o repositório.
-- A segunda revisão independente (etapas 5 a 8) foi interrompida pelo Felipe antes de rodar.
+- A segunda revisão independente (etapas 5 a 8) foi interrompida pelo Felipe antes de rodar; depois ele pediu para executar.
+
+## Sessão 1, continuação (29/09/2026): segunda revisão independente (etapas 5 a 8)
+Um agente revisor separado, sem ter visto o código ser escrito, leu os commits das etapas 5 a 8 e reproduziu os problemas com scripts. Encontrou 9; todos corrigidos, cada um com teste de regressão em `tests/integration/test_revisao_etapas5a8.py` (conferido que o teste falha sem a correção):
+1. **Canal aberto**: sem `CHANNEL_API_KEY`, qualquer um mandava mensagem com o id de uma conversa do Omni (`omni:<instância>:<telefone>`) e lia o outbox dela. Agora ids `omni:` só entram pelo webhook autenticado, e no Docker o agente não sobe sem `CHANNEL_API_KEY` e `VAULT_KEY` (`EXIGIR_SEGREDOS=true`).
+2. **Correção ignorada durante a espera**: se o lead trocava o plano enquanto a cotação estava em segundo plano, a troca era descartada e ele recebia o preço do plano antigo (valor real da API, mas do plano errado). Agora o dado novo é incorporado, a tentativa pendente desiste e o agente confirma de novo.
+3. **Texto do vendedor sem guardrail**: saía com R$ digitado à mão e ficava cru no outbox junto com o id do canal. Agora passa pelo mesmo guardrail do bot (sem PII do lead, sem R$ fora das cotações da API; o vendedor pode dizer o próprio nome) e o outbox guarda só o `conversation_ref`.
+4. **VAULT_KEY trocada** travava toda conversa com CEP (InvalidToken em cada mensagem). Agora a chave aceita rotação (`nova,antiga`), CEP ilegível é tratado como ausente e o agente pede o CEP de novo em vez de cotar sem ele.
+5. **Retries pendentes perdidos**: o mapa de pendentes era lido, alterado e gravado inteiro, sem lock global; 10 agendamentos concorrentes deixavam 1. Agora é um hash com um campo por conversa (gravação atômica), removido só depois da tentativa; com várias réplicas, só uma executa cada tentativa.
+6. **Operador não conseguia agir com o id da fila** (`conv_...`), só com o id cru, que põe o telefone na URL e no access log. Operador, trace, histórico e outbox aceitam o `conversation_ref`.
+7. **Métricas de handoff enganosas**: handoff que chegava por mensagem ativa ficava sem motivo; a espera de 30 s era menor que o ciclo de tentativas (85 s) e deixava conversas sem desfecho fora da conta; `cotacao_indisponivel` contava como coerente para qualquer caso. O outbox passou a trazer estágio e motivo, a espera cobre o ciclo inteiro e a indisponibilidade é contada à parte.
+8. Chave com acento no header dava 500 em vez de 401 (`compare_digest` com str não ASCII). Comparação em bytes.
+9. Reação (só emoji) e eventos que não são `message.received` do Omni viravam "mídia" e, na segunda, handoff. Agora são ignorados.
+
+Pontos que o revisor verificou e estavam certos: sem deadlock no lock por conversa, interrupt/resume corretos, fila, trace, histórico e logs mascarados, `/omni/webhook` fechado sem chave, mensagens ativas passando pelo guardrail de R$.
