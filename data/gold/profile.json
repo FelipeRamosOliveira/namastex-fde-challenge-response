@@ -1,0 +1,44 @@
+{
+  "mensagens": 26470,
+  "conversas": 2500,
+  "desfechos": {
+    "em_negociacao": 757,
+    "ganho": 712,
+    "perdido": 538,
+    "sem_resposta": 493
+  },
+  "tipos_mensagem": {
+    "text": 24681,
+    "document": 774,
+    "image": 550,
+    "audio": 465
+  },
+  "leads_acima_75": 280,
+  "veiculos_acima_20_anos": 531,
+  "cep_prefixos": {
+    "88": 221,
+    "26": 187,
+    "51": 187,
+    "04": 184,
+    "01": 183,
+    "08": 181,
+    "07": 177,
+    "59": 176,
+    "21": 174,
+    "20": 171,
+    "41": 170,
+    "13": 167,
+    "80": 167,
+    "30": 155
+  },
+  "palavras_de_objecao": {
+    "esposa": 233,
+    "franquia": 226,
+    "caro": 220,
+    "preco": 211,
+    "salgado": 211,
+    "pensar": 208,
+    "concorrente": 197,
+    "mais barato": 197
+  }
+}
