@@ -37,20 +37,29 @@ vendor/challenge/  submódulo com o desafio original
 
 Pré-requisitos: `git` e Docker com Compose v2.
 
+**1. Clonar** (o submódulo traz a quote-api original):
 ```bash
-# 1. clonar (o submódulo traz a quote-api original)
 git clone --recurse-submodules https://github.com/FelipeRamosOliveira/namastex-fde-challenge-response.git autoseguro-agent && cd autoseguro-agent
+```
 
-# 2. .env com os segredos obrigatórios (CHANNEL_API_KEY, TRACE_API_KEY, VAULT_KEY)
+**2. Criar o `.env`** com os segredos obrigatórios (`CHANNEL_API_KEY`, `TRACE_API_KEY`, `VAULT_KEY`):
+```bash
 cp .env.example .env && python3 -c "import base64,os,re,secrets as S;p='.env';s=open(p).read();[s:=re.sub(rf'^{k}=.*$',f'{k}={v}',s,flags=re.M) for k,v in {'CHANNEL_API_KEY':S.token_urlsafe(24),'TRACE_API_KEY':S.token_urlsafe(24),'VAULT_KEY':base64.urlsafe_b64encode(os.urandom(32)).decode()}.items()];open(p,'w').write(s)"
+```
 
-# 3. subir
+**3. Subir:**
+```bash
 docker compose up -d --build
+```
 
-# 4. testar: responde e pergunta a idade
+**4. Carregar as chaves no terminal:**
+```bash
 set -a; . ./.env; set +a
-curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" \
-  -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
+```
+
+**5. Testar** (deve responder e perguntar a idade):
+```bash
+curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
 ```
 
 Pronto. Opcional: `GROQ_API_KEY` no `.env` liga o LLM (sem ela, o agente usa só regras). Conversa completa até a cotação, variáveis, modo dev, testes e problemas comuns estão em [4. Operação](#4-operação).
@@ -140,8 +149,11 @@ for t in "tenho 35 anos" "cep 01310-100" "completo" "hoje" "sim"; do
 # última resposta: "stage":"cotado" e "Cotação pronta! Plano *Completo*: R$ ..."
 # "stage":"aguardando_cotacao" = a /quote falhou (instabilidade do desafio);
 # a cotação chega em segundos em GET /v1/conversations/demo/outbox (mesmo header)
+```
 
-curl -s localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"   # rastreio mascarado
+Rastreio mascarado da conversa:
+```bash
+curl -s localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"
 ```
 `docker compose ps` deve mostrar os 4 containers `healthy`. Documentação interativa da API em `http://localhost:8080/docs`.
 
