@@ -126,3 +126,12 @@ async def test_texto_mascarado_de_ponta_a_ponta_no_prompt():
     enviado = fake.prompts()
     for dado in ("Ana", "Souza", "389.083.863-43", "7224", "26703"):
         assert dado not in enviado
+
+
+async def test_regra_explicita_vence_o_llm():
+    """Teste ao vivo: o LLM leu "o mais completo" como Completo e "semana que vem" como hoje."""
+    fake = FakeLLM(extrair=lambda t: {"plano_id": "completo", "data_inicio": "2026-09-29"})
+    extr = LLMExtractor(cliente(fake))
+    assert (await extr.extract("quero o mais completo", "plano_id", HOJE)).slots["plano_id"] == "premium"
+    ex = await extr.extract("pode ser a partir de semana que vem", "data_inicio", HOJE)
+    assert ex.slots["data_inicio"] == date(2026, 10, 6)

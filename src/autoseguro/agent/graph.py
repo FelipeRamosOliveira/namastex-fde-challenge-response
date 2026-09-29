@@ -49,6 +49,7 @@ class AgentState(TypedDict, total=False):
     reply: str
     reply_prefix: str
     ponte: bool
+    planos_mostrados: bool
     quotes: list[dict[str, Any]]  # respostas OK da API (fonte dos valores permitidos)
     quote_atual: dict[str, Any] | None
     handoff: dict[str, Any] | None
@@ -284,18 +285,28 @@ def build_graph(
         # ---- coletando: pergunta o que falta, na ordem
         faltando = [c for c in CAMPOS if not slots.get(c)]
         prefix = T.saudacao() if stage == "novo" else ""
-        if "pergunta_planos" in ex.intents and "plano_id" in faltando and faltando[0] != "plano_id":
+        mostrados = bool(state.get("planos_mostrados"))
+        if (
+            "pergunta_planos" in ex.intents
+            and "plano_id" in faltando
+            and faltando[0] != "plano_id"
+            and not mostrados
+        ):
             prefix += (
                 T.perguntar("plano_id", await planos()).replace("\nQual deles você quer cotar?", "") + "\n"
             )
+            mostrados = True
         if faltando:
             campo = faltando[0]
+            # a lista de planos aparece uma vez só; depois, pergunta curta
+            pergunta = T.perguntar(campo, [] if (campo == "plano_id" and mostrados) else await planos())
             return {
                 **base,
                 "acao": "responder",
                 "stage": "coletando",
                 "awaiting": campo,
-                "reply": prefix + T.perguntar(campo, await planos()),
+                "planos_mostrados": mostrados or campo == "plano_id",
+                "reply": prefix + pergunta,
             }
         return {
             **base,

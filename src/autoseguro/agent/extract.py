@@ -216,6 +216,12 @@ def parse_data(t: str, hoje: date) -> date | None:
         except ValueError:
             return None
         return dt if m[3] or dt >= hoje else date(ano + 1, mes, d)
+    if re.search(r"\b(semana que vem|proxima semana)\b", t):
+        return hoje + timedelta(days=7)
+    if re.search(r"\b(mes que vem|proximo mes)\b", t):
+        return (hoje.replace(day=1) + timedelta(days=32)).replace(day=1)
+    if re.search(r"\bdepois de amanha\b", t):
+        return hoje + timedelta(days=2)
     if re.search(r"\bhoje\b|\bimediato\b|\bagora\b|\bja\b", t):
         return hoje
     if re.search(r"\bamanha\b", t):
@@ -295,13 +301,28 @@ class RuleExtractor:
         if ceps := _RE_CEP_TOKEN.findall(text):
             ex.slots["cep"] = ceps[-1]
 
-        # plano
+        # plano: palavra-chave explícita, ignorando a negada ("o mais barato não serve")
+        def citado(w: str) -> bool:
+            for m in re.finditer(rf"\b{w}\b", t):
+                perto = t[max(0, m.start() - 12) : m.start()] + " " + t[m.end() : m.end() + 14]
+                if not re.search(r"\bnao\b|\bnem\b", perto):
+                    return True
+            return False
+
         for pid, words in _PLANOS.items():
-            if any(re.search(rf"\b{w}\b", t) for w in words):
+            if any(citado(w) for w in words):
                 if not (pid == "essencial" and "objecao_preco" in ex.intents and awaiting != "plano_id"):
                     ex.slots["plano_id"] = pid
                     break
 
-        if awaiting == "data_inicio" and "data_inicio" not in ex.slots and ex.intents & {"aceite"}:
+        sem_referencia_de_tempo = not re.search(
+            r"semana|mes|dia|amanha|proxim|segunda|terca|quarta|quinta|sexta|sabado|domingo|depois", t
+        )
+        if (
+            awaiting == "data_inicio"
+            and "data_inicio" not in ex.slots
+            and ex.intents & {"aceite"}
+            and sem_referencia_de_tempo
+        ):
             ex.slots["data_inicio"] = hoje  # "pode ser", "sim": começa hoje
         return ex

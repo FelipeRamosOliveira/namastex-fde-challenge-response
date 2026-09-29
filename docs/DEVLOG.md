@@ -38,3 +38,12 @@ Achou 12 problemas, 10 reproduzidos. Todos corrigidos com teste de regressão:
 - Modelo: a IA consultou a documentação atual do Groq e trocou `llama-3.3-70b-versatile` por `openai/gpt-oss-20b`, que tem structured outputs estrito (ADR 0007).
 - Proposta aceita: LLM só como intérprete (extração validada) e redator de frase-ponte sem números; decisões e valores continuam no código.
 - Detalhe do Python 3.14: o `ruff format` reescreveu `except (A, B):` como `except A, B:` (PEP 758, válido no 3.14).
+
+## Sessão 1, continuação (29/09/2026): primeiro teste ao vivo (Docker + Groq)
+Felipe subiu o `docker compose` no Windows; a IA testou pelo navegador do app Claude (a VM não alcança o `localhost` do Windows).
+- Funcionou: os 4 containers conversando, Groq respondendo de verdade, cotação de R$ 209,90 com pro-rata de R$ 13,99 conferida contra a regra, 1 tentativa na /quote, CPF e CEP mascarados no trace e no prompt.
+- Problemas achados e corrigidos (com teste de regressão):
+  - "o mais completo" virou Completo e "semana que vem" virou hoje: o LLM tinha prioridade sobre a regra. Agora a regra explícita vence e o LLM preenche o que a regra não entende; a regra ignora palavra-chave negada ("o mais barato não serve") e entende "semana que vem" e "mês que vem".
+  - Lista de planos repetida quando o lead perguntou preço ou o que é franquia: o LLM marcava `pergunta_planos`. Prompt mais estrito e a lista aparece uma vez só.
+  - Saudação duplicada: a frase-ponte do LLM também dizia "Oi". Prompt do redator proíbe cumprimento.
+  - Primeiro turno levou 8,9 s (conexão MCP, /planos e primeira chamada ao Groq a frio). O agente agora aquece a conexão MCP e o cache do /planos ao subir.

@@ -270,3 +270,13 @@ async def test_mensagem_repetida_nao_reprocessa(stable_quote_url, tmp_path):
         t = await ag.trace("c17")
     assert b["reply"] == a["reply"] and b.get("duplicada")
     assert len(t["transcript"]) == 2
+
+
+async def test_lista_de_planos_aparece_uma_vez(stable_quote_url, tmp_path):
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
+        await ag.handle("c18", "oi")
+        r1 = await ag.handle("c18", "quais planos vocês têm? é um gol 2020")
+        r2 = await ag.handle("c18", "tenho 40 anos")
+        r3 = await ag.handle("c18", "cep 01310-100")
+    assert "Temos 3 planos" in r1["reply"]
+    assert "Temos 3 planos" not in r3["reply"] and "Essencial, Completo ou Premium" in r3["reply"]

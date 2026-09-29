@@ -77,6 +77,10 @@ class AutoSeguroAgent:
             redator = Redator(llm) if self.s.usar_redator else None
         self.llm = llm
         self.graph = build_graph(gateway, extractor, saver, redator=redator, **kw)
+        try:  # aquece: conexão MCP e cache do /planos antes do primeiro lead
+            await gateway.consultar_planos()
+        except Exception:  # noqa: BLE001, S110 - sem aquecimento, o primeiro turno só fica mais lento
+            pass
         return self
 
     async def __aexit__(self, *exc) -> None:

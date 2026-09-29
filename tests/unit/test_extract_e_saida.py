@@ -36,6 +36,12 @@ ex = RuleExtractor()
         ("2019", "veiculo_ano", {"veiculo_ano": 2019}),
         ("em 2019 eu mudei de emprego", None, {}),
         ("moro no [CEP_1] mas o carro dorme no [CEP_2]", None, {"cep": "[CEP_2]"}),
+        # vistos no teste ao vivo com Docker + Groq (29/09/2026)
+        ("pode ser a partir de semana que vem", "data_inicio", {"data_inicio": date(2026, 10, 6)}),
+        ("pode ser mês que vem", "data_inicio", {"data_inicio": date(2026, 10, 1)}),
+        ("pode ser", "data_inicio", {"data_inicio": HOJE}),
+        ("quero o top, o mais barato não serve", "plano_id", {}),
+        ("não quero o premium, quero o completo", "plano_id", {"plano_id": "completo"}),
     ],
 )
 async def test_extrai_slots(texto, awaiting, esperado):
