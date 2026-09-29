@@ -7,155 +7,53 @@ Três regras guiam o projeto:
 2. **Valor real:** todo valor em R$ mostrado ao lead vem da resposta da `/quote`.
 3. **Omni:** o canal é o [Omni](https://github.com/automagik-dev/omni), da própria Namastex.
 
-Sumário: [1. Ficha técnica](#1-ficha-técnica) · [2. Guia rápido](#2-guia-rápido) · [3. Arquitetura](#3-arquitetura) · [4. Referência](#4-referência)
+Sumário: [1. Ficha técnica](#1-ficha-técnica) · [2. Guia rápido](#2-guia-rápido) · [3. Arquitetura](#3-arquitetura) · [4. Operação](#4-operação) · [5. Referência](#5-referência)
 
 ---
 
 ## 1. Ficha técnica
 
-| Camada | Tecnologia | Versão | Papel no projeto |
-|---|---|---|---|
-| Linguagem | Python | 3.14.7 | Todo o código, assíncrono de ponta a ponta |
-| Pacotes | uv | 0.12 | Ambiente e dependências (`uv.lock` congelado) |
-| Orquestração | LangGraph | 1.2.12 | Grafo do atendimento, checkpoints, `interrupt()` para o humano no circuito |
-| Checkpoints | langgraph-checkpoint-sqlite | 3.1.1 | Estado de cada conversa, retomada e histórico |
-| Ferramentas | FastMCP (protocolo MCP 2.2) | 4.0.5 | Servidor `autoseguro-tools`: planos, pré-validação, cotação, handoff |
-| API | FastAPI + Uvicorn | 0.141.1 / 0.54.0 | Entrada do canal, painel do vendedor, rastreio |
-| HTTP | httpx | 0.28.1 | Cliente da `/quote`, do LLM e do Omni |
-| Validação | Pydantic + pydantic-settings | 2.13.5 / 2.15.0 | Contratos, saída do LLM, configuração pelo `.env` |
-| Estado compartilhado | Redis | 7 (cliente 8.1) | Cache, circuit breaker, fila do vendedor, outbox, lock por conversa |
-| LLM principal | Groq, modelo `openai/gpt-oss-20b` | API gratuita | Extrai dados em JSON validado e redige frase-ponte sem números |
-| LLM reserva | OpenRouter, `openai/gpt-oss-20b:free` | API gratuita | Assume quando o Groq falha |
-| Canal | Omni (provider `webhook`) | contrato do commit `906a420` | WhatsApp de entrada e saída |
-| Criptografia | cryptography (Fernet) | 50.0.1 | Cifra o CEP guardado no checkpoint |
-| Dados | pandas + pyarrow | 3.0.6 / 25.0.1 | Pipeline Bronze, Silver e Gold |
-| Simulação | fast-agent-mcp (opcional) | 0.10.39 | Leads simulados com LLM |
-| Testes | pytest + pytest-asyncio + fakeredis | 9.1.1 / 2.38.0 (fakeredis) | 176 testes, contra a quote-api original |
-| Qualidade | ruff | 0.16.9 | Lint e formatação |
-| Ambiente | Docker Compose | v2 | 4 containers: quote-api, redis, mcp-tools, agent-api |
+**Stack:** Python 3.14 (uv) · LangGraph (orquestração e checkpoints SQLite) · FastMCP (ferramentas) · FastAPI · Redis · Groq `gpt-oss-20b` com OpenRouter de reserva (opcional) · Omni (canal) · Docker Compose. Versões exatas em `pyproject.toml` e `uv.lock`.
 
-A quote-api é a **original do desafio**, incluída como submódulo em `vendor/challenge`. O LLM é opcional: sem chave, o agente usa só regras.
+**Containers:** `quote-api` :8000 (API original do desafio, submódulo) · `redis` · `mcp-tools` :8100 · `agent-api` :8080.
+
+```
+src/autoseguro/
+  api/          FastAPI: canal, webhook do Omni, vendedor, rastreio
+  agent/        grafo LangGraph, fachada, templates, extração, outbox
+  tools/        servidor MCP, cliente da /quote, circuit breaker, fila, store
+  guardrails/   máscara de PII e guardrail de saída
+  channels/     adaptador do Omni
+  llm/          Groq e OpenRouter com cache
+  data/  sim/   pipeline Bronze/Silver/Gold, simulador e avaliação
+tests/          unit, integration (contra a quote-api original), live (Groq)
+docs/           ADRs, figuras, avaliação, execução, Omni, DEVLOG
+vendor/challenge/  submódulo com o desafio original
+```
 
 ---
 
 ## 2. Guia rápido
 
-Escrito para ser seguido passo a passo, inclusive por outra IA. Cada passo traz o comando e o resultado esperado.
+Pré-requisitos: `git` e Docker com Compose v2.
 
-### 2.1 Pré-requisitos
-- `git` e **Docker com Compose v2** (caminho recomendado).
-- Sem Docker: `uv` 0.12 ou mais novo (ele baixa o Python 3.14 sozinho).
-- Opcional: chave gratuita do Groq em https://console.groq.com.
-
-### 2.2 Subir com Docker (recomendado)
-
-**Passo 1. Clonar com o submódulo.** Sem ele a quote-api não existe e o build falha.
 ```bash
-git clone --recurse-submodules <url-do-repo> autoseguro-agent
-cd autoseguro-agent
-git submodule update --init   # só se já tinha clonado sem o submódulo
-```
+# 1. clonar (o submódulo traz a quote-api original)
+git clone --recurse-submodules <url-do-repo> autoseguro-agent && cd autoseguro-agent
 
-**Passo 2. Criar o `.env`** a partir do exemplo e gerar os segredos obrigatórios:
-```bash
-cp .env.example .env
-python3 - <<'EOF'
-import base64, os, re, secrets
-p = ".env"; s = open(p).read()
-for k, v in {
-    "CHANNEL_API_KEY": secrets.token_urlsafe(24),
-    "TRACE_API_KEY": secrets.token_urlsafe(24),
-    "VAULT_KEY": base64.urlsafe_b64encode(os.urandom(32)).decode(),  # chave Fernet válida
-}.items():
-    s = re.sub(rf"^{k}=.*$", f"{k}={v}", s, flags=re.M)
-open(p, "w").write(s)
-EOF
-```
-Opcional: preencha `GROQ_API_KEY=` no `.env` para ligar o LLM.
+# 2. .env com os segredos obrigatórios (CHANNEL_API_KEY, TRACE_API_KEY, VAULT_KEY)
+cp .env.example .env && python3 -c "import base64,os,re,secrets as S;p='.env';s=open(p).read();[s:=re.sub(rf'^{k}=.*$',f'{k}={v}',s,flags=re.M) for k,v in {'CHANNEL_API_KEY':S.token_urlsafe(24),'TRACE_API_KEY':S.token_urlsafe(24),'VAULT_KEY':base64.urlsafe_b64encode(os.urandom(32)).decode()}.items()];open(p,'w').write(s)"
 
-| Variável | Obrigatória no Docker | Para que serve |
-|---|---|---|
-| `CHANNEL_API_KEY` | sim | Header `x-channel-key` exigido em `/v1/messages` e no outbox |
-| `VAULT_KEY` | sim | Chave Fernet que cifra o CEP. Rotação: `nova,antiga` |
-| `TRACE_API_KEY` | recomendada | Header `x-api-key` do painel do vendedor e do rastreio |
-| `GROQ_API_KEY` / `OPENROUTER_API_KEY` | não | LLM principal e reserva; sem elas, só regras |
-| `OMNI_PROVIDER_KEY`, `OMNI_URL`, `OMNI_API_KEY` | não | Ligar a um Omni real (ver `docs/omni.md`); sem elas, `/omni/webhook` fica fechado |
-
-Sem `CHANNEL_API_KEY` ou `VAULT_KEY`, o `agent-api` **não sobe de propósito** (`EXIGIR_SEGREDOS=true` no compose).
-
-**Passo 3. Subir os containers:**
-```bash
+# 3. subir
 docker compose up -d --build
-docker compose ps        # esperado: quote-api, redis, mcp-tools e agent-api "healthy"
-```
 
-**Passo 4. Verificar:**
-```bash
-curl -s localhost:8080/health
-# esperado: {"status":"ok"}
-
+# 4. testar: responde e pergunta a idade
 set -a; . ./.env; set +a
-curl -s localhost:8080/v1/messages -H 'content-type: application/json' \
-  -H "x-channel-key: $CHANNEL_API_KEY" \
+curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" \
   -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
-# esperado: JSON com "stage":"coletando" e a pergunta pela idade
 ```
 
-**Passo 5. Conversa completa até a cotação** (mesmo `conversation_id`, uma mensagem por vez):
-```bash
-for t in "tenho 35 anos" "cep 01310-100" "completo" "hoje" "sim"; do
-  curl -s localhost:8080/v1/messages -H 'content-type: application/json' \
-    -H "x-channel-key: $CHANNEL_API_KEY" \
-    -d "{\"conversation_id\":\"demo\",\"text\":\"$t\"}"; echo; done
-# esperado na última: "stage":"cotado" e "Cotação pronta! Plano *Completo*: R$ ..."
-# se vier "stage":"aguardando_cotacao", a API falhou (acontece de propósito no desafio):
-# a cotação chega em segundos em GET /v1/conversations/demo/outbox (mesmo header x-channel-key)
-```
-
-**Passo 6. Rastreio mascarado:**
-```bash
-curl -s localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"
-```
-
-### 2.3 Modo desenvolvimento (sem rebuild a cada mudança)
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-```
-A pasta `src/` é montada no `agent-api` e no `mcp-tools`, que recarregam sozinhos em cerca de 1 s. Faça rebuild (`... up -d --build`) só quando mudar `pyproject.toml`, `uv.lock` ou o `Dockerfile`. Mudança no `.env` pede só `up -d` de novo, para recriar o container.
-
-### 2.4 Sem Docker
-```bash
-uv sync
-(cd vendor/challenge/quote-service && ../../../.venv/bin/python -m uvicorn app.main:app --port 8000) &
-uv run uvicorn autoseguro.api.app:app --port 8080
-```
-Sem `REDIS_URL` e sem `MCP_URL`, cache e fila ficam em memória e as ferramentas MCP rodam no mesmo processo. Sem `CHANNEL_API_KEY`, o canal fica aberto (aviso no log; só para desenvolvimento).
-
-### 2.5 Testes e checagens
-```bash
-uv run pytest                      # 176 testes: unitários + integração contra a quote-api original (LLM simulado)
-uv run ruff check src tests scripts
-uv run python scripts/sanitize_ai_logs.py --check
-uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GROQ_API_KEY e rede)
-```
-
-### 2.6 Problemas comuns
-
-| Sintoma | Causa | Correção |
-|---|---|---|
-| Build falha em `vendor/challenge/quote-service` | Submódulo não baixado | `git submodule update --init` |
-| `agent-api` reinicia com `EXIGIR_SEGREDOS=true e faltam...` | `.env` sem `CHANNEL_API_KEY` ou `VAULT_KEY` | Refazer o passo 2 e `docker compose up -d` |
-| `401 chave do canal inválida` | Falta o header | Enviar `-H "x-channel-key: $CHANNEL_API_KEY"` |
-| `403 conversas do Omni entram só por /omni/webhook` | `conversation_id` começando com `omni:` | Usar outro id; ids `omni:` são reservados ao webhook |
-| `"stage":"aguardando_cotacao"` | A `/quote` falhou (instabilidade do desafio) | Esperado: consultar `GET /v1/conversations/<id>/outbox` depois de alguns segundos |
-| Resposta sem frase natural | LLM desligado ou sem rede | Esperado sem `GROQ_API_KEY`; o fluxo não depende dele |
-
-### 2.7 Regras para quem for mexer no código (pessoa ou IA)
-- Nunca mostrar valor em R$ que não venha da `/quote`: use os templates de `agent/templates.py`.
-- Todo texto do lead passa por `guardrails/pii.py` antes de qualquer LLM, log, trace, fila ou checkpoint.
-- Não versionar o `.env`. Não editar os PNGs de `docs/figuras/` à mão (ver `docs/figuras/README.md`).
-- Rodar `uv run pytest` e `uv run ruff check src tests scripts` antes de commitar.
-- Contexto completo para agentes de IA em `CLAUDE.md`.
+Pronto. Opcional: `GROQ_API_KEY` no `.env` liga o LLM (sem ela, o agente usa só regras). Conversa completa até a cotação, variáveis, modo dev, testes e problemas comuns estão em [4. Operação](#4-operação).
 
 ---
 
@@ -186,7 +84,7 @@ Cada turno do lead percorre os nós abaixo. O estado fica salvo por conversa (`t
 1. **entrada:** registra a mensagem já mascarada. Um evento de sistema (nova tentativa de cotação) entra por aqui sem virar mensagem do lead.
 2. **decidir:** extrai os dados (regras, com o LLM validado completando o que as regras não entendem) e pré-valida idade e ano do carro sem gastar chamada na API. Depois escolhe: perguntar o próximo dado, confirmar, cotar ou passar para humano. Se o lead corrigir um dado enquanto a cotação está em segundo plano, confirma de novo com o dado certo.
 3. **cotar:** chama a ferramenta MCP. Se der certo, monta a resposta com o preço da API. Se a API estiver fora, avisa o lead e pede nova tentativa em segundo plano.
-4. **handoff:** registra na fila do vendedor, com resumo mascarado e um dos 8 motivos (tabela em [4.2](#42-quando-o-agente-passa-para-um-humano)).
+4. **handoff:** registra na fila do vendedor, com resumo mascarado e um dos 8 motivos (tabela em [5.2](#52-quando-o-agente-passa-para-um-humano)).
 5. **saida:** acrescenta a frase-ponte do LLM quando cabe e aplica o guardrail de saída: nada de dado pessoal e nada de R$ que não veio da API. Se algo escapar, a resposta vira um texto seguro.
 6. **aguardar_humano:** logo depois do handoff, `interrupt()` pausa a conversa. Mensagens do lead durante a pausa ficam no histórico sem acordar o bot. O vendedor retoma com `devolver` (o bot continua de onde parou) ou `encerrar`.
 7. Cada nó grava um checkpoint. `GET /v1/conversations/{id}/historico` mostra a sequência inteira.
@@ -228,9 +126,82 @@ A `/quote` do desafio falha em 20% das chamadas e demora 8 s em outras 10%. As d
 
 ---
 
-## 4. Referência
+## 4. Operação
 
-### 4.1 Resultados
+Com o serviço no ar: como exercitar, desenvolver, testar e resolver problemas.
+
+### 4.1 Conversa completa até a cotação
+Mesmo `conversation_id` do guia rápido, uma mensagem por vez:
+```bash
+for t in "tenho 35 anos" "cep 01310-100" "completo" "hoje" "sim"; do
+  curl -s localhost:8080/v1/messages -H 'content-type: application/json' \
+    -H "x-channel-key: $CHANNEL_API_KEY" \
+    -d "{\"conversation_id\":\"demo\",\"text\":\"$t\"}"; echo; done
+# última resposta: "stage":"cotado" e "Cotação pronta! Plano *Completo*: R$ ..."
+# "stage":"aguardando_cotacao" = a /quote falhou (instabilidade do desafio);
+# a cotação chega em segundos em GET /v1/conversations/demo/outbox (mesmo header)
+
+curl -s localhost:8080/v1/conversations/demo/trace -H "x-api-key: $TRACE_API_KEY"   # rastreio mascarado
+```
+`docker compose ps` deve mostrar os 4 containers `healthy`. Documentação interativa da API em `http://localhost:8080/docs`.
+
+Variáveis do `.env`:
+
+| Variável | Obrigatória no Docker | Para que serve |
+|---|---|---|
+| `CHANNEL_API_KEY` | sim | Header `x-channel-key` exigido em `/v1/messages` e no outbox |
+| `VAULT_KEY` | sim | Chave Fernet que cifra o CEP. Rotação: `nova,antiga` |
+| `TRACE_API_KEY` | recomendada | Header `x-api-key` do painel do vendedor e do rastreio |
+| `GROQ_API_KEY` / `OPENROUTER_API_KEY` | não | LLM principal e reserva; sem elas, só regras |
+| `OMNI_PROVIDER_KEY`, `OMNI_URL`, `OMNI_API_KEY` | não | Ligar a um Omni real (ver `docs/omni.md`); sem elas, `/omni/webhook` fica fechado |
+
+Sem `CHANNEL_API_KEY` ou `VAULT_KEY`, o `agent-api` não sobe de propósito (`EXIGIR_SEGREDOS=true` no compose).
+
+### 4.2 Modo desenvolvimento (sem rebuild a cada mudança)
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+A pasta `src/` é montada no `agent-api` e no `mcp-tools`, que recarregam sozinhos em cerca de 1 s. Faça rebuild (`... up -d --build`) só quando mudar `pyproject.toml`, `uv.lock` ou o `Dockerfile`. Mudança no `.env` pede só `up -d` de novo, para recriar o container.
+
+### 4.3 Sem Docker
+```bash
+uv sync
+(cd vendor/challenge/quote-service && ../../../.venv/bin/python -m uvicorn app.main:app --port 8000) &
+uv run uvicorn autoseguro.api.app:app --port 8080
+```
+Sem `REDIS_URL` e sem `MCP_URL`, cache e fila ficam em memória e as ferramentas MCP rodam no mesmo processo. Sem `CHANNEL_API_KEY`, o canal fica aberto (aviso no log; só para desenvolvimento).
+
+### 4.4 Testes e checagens
+```bash
+uv run pytest                      # 176 testes: unitários + integração contra a quote-api original (LLM simulado)
+uv run ruff check src tests scripts
+uv run python scripts/sanitize_ai_logs.py --check
+uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GROQ_API_KEY e rede)
+```
+
+### 4.5 Problemas comuns
+
+| Sintoma | Causa | Correção |
+|---|---|---|
+| Build falha em `vendor/challenge/quote-service` | Submódulo não baixado | `git submodule update --init` |
+| `agent-api` reinicia com `EXIGIR_SEGREDOS=true e faltam...` | `.env` sem `CHANNEL_API_KEY` ou `VAULT_KEY` | Refazer o passo 2 e `docker compose up -d` |
+| `401 chave do canal inválida` | Falta o header | Enviar `-H "x-channel-key: $CHANNEL_API_KEY"` |
+| `403 conversas do Omni entram só por /omni/webhook` | `conversation_id` começando com `omni:` | Usar outro id; ids `omni:` são reservados ao webhook |
+| `"stage":"aguardando_cotacao"` | A `/quote` falhou (instabilidade do desafio) | Esperado: consultar `GET /v1/conversations/<id>/outbox` depois de alguns segundos |
+| Resposta sem frase natural | LLM desligado ou sem rede | Esperado sem `GROQ_API_KEY`; o fluxo não depende dele |
+
+### 4.6 Regras para quem for mexer no código (pessoa ou IA)
+- Nunca mostrar valor em R$ que não venha da `/quote`: use os templates de `agent/templates.py`.
+- Todo texto do lead passa por `guardrails/pii.py` antes de qualquer LLM, log, trace, fila ou checkpoint.
+- Não versionar o `.env`. Não editar os PNGs de `docs/figuras/` à mão (ver `docs/figuras/README.md`).
+- Rodar `uv run pytest` e `uv run ruff check src tests scripts` antes de commitar.
+- Contexto completo para agentes de IA em `CLAUDE.md`.
+
+---
+
+## 5. Referência
+
+### 5.1 Resultados
 Avaliação completa em `docs/avaliacao.md`.
 
 | Cenário | Cotados | Preço igual ao da API | Handoff coerente | Em segundo plano | PII nas respostas |
@@ -240,7 +211,7 @@ Avaliação completa em `docs/avaliacao.md`.
 
 Nos dois cenários nenhuma conversa ficou sem desfecho e nenhuma foi para humano por indisponibilidade da API.
 
-### 4.2 Quando o agente passa para um humano
+### 5.2 Quando o agente passa para um humano
 
 | Motivo | Quando |
 |---|---|
@@ -253,7 +224,7 @@ Nos dois cenários nenhuma conversa ficou sem desfecho e nenhuma foi para humano
 | `sem_progresso` | 6 turnos sem dado novo |
 | `pronto_para_fechar` | O lead aceita a proposta: emissão de apólice e boleto é humana, como no dataset |
 
-### 4.3 Endpoints
+### 5.3 Endpoints
 
 | Rota | Quem usa | Chave |
 |---|---|---|
@@ -268,10 +239,10 @@ Nos dois cenários nenhuma conversa ficou sem desfecho e nenhuma foi para humano
 
 Nas rotas do vendedor e de rastreio, `{id}` pode ser o `conversation_ref` (`conv_...`) que a fila mostra, para o telefone não ir na URL. Documentação interativa em `http://localhost:8080/docs`.
 
-### 4.4 Rastreio
+### 5.4 Rastreio
 Cada turno gera eventos com `event_id`, `conversation_id` (opaco) e `message_id`: `message_in` (com os tipos de dado pessoal detectados), `extracao`, `pre_validacao`, `cotacao` (com `quote_request_id`, `quote_id`, tentativas, status HTTP, latência, hedge e cache), `handoff` e `message_out`. Os eventos também saem no log do container, um JSON por linha (`docker compose logs agent-api`). Execuções completas de exemplo em `docs/execucao/` (regerar: `uv run python scripts/exportar_execucao.py`).
 
-### 4.5 Decisões de arquitetura
+### 5.5 Decisões de arquitetura
 Detalhes em `docs/adr/`.
 
 | # | Decisão | Por quê |
@@ -285,23 +256,7 @@ Detalhes em `docs/adr/`.
 | 0007 | LLM só interpreta e redige frase sem números | Entende texto livre sem poder decidir fluxo nem preço |
 | 0008 | Cotação em segundo plano retomando o checkpoint; humano com `interrupt()` | Queda passageira não vira handoff; vendedor responde, devolve ou encerra |
 
-### 4.6 Estrutura do repositório
-```
-src/autoseguro/
-  api/app.py            FastAPI: canal, webhook do Omni, vendedor, rastreio
-  agent/                grafo LangGraph, fachada (service.py), templates, extração, redator, outbox
-  tools/                servidor MCP, cliente da /quote, circuit breaker, fila de handoff, store
-  guardrails/           máscara de PII e guardrail de saída
-  channels/omni.py      adaptador do Omni
-  llm/client.py         Groq e OpenRouter com cache e bloqueio de PII
-  data/pipeline.py      Bronze, Silver e Gold
-  sim/                  leads simulados e avaliação
-tests/                  unit, integration (contra a quote-api original), live (Groq)
-docs/                   ADRs, avaliação, execução, Omni, DEVLOG, figuras
-vendor/challenge/       submódulo com o desafio original (quote-api e dataset)
-```
-
-### 4.7 Desenvolvimento assistido por IA
+### 5.6 Desenvolvimento assistido por IA
 - `CLAUDE.md` e `.claude/`: contexto, regras, hooks e subagentes de revisão.
 - `docs/DEVLOG.md`: o que a IA propôs, o que foi aceito ou rejeitado, e os achados das duas revisões independentes.
 - `ai-logs/`: export das sessões, sanitizado por `scripts/sanitize_ai_logs.py`.
