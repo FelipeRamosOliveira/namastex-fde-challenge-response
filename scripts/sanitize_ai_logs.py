@@ -5,6 +5,7 @@ Fluxo:
      Claude Code: ~/.claude/projects/<slug>/*.jsonl
   2. uv run python scripts/sanitize_ai_logs.py
      -> grava em ai-logs/sessions/ com segredos e PII mascarados.
+     (opcional: --valores-de .env remove também os valores literais do seu .env)
   3. uv run python scripts/sanitize_ai_logs.py --check
      -> falha se sobrou algo em ai-logs/ (usado no pre-commit e na CI).
 """
@@ -32,13 +33,34 @@ SEGREDOS = [
     ("github", re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}")),
     ("aws", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("bearer", re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{20,}")),
+    # chave em header ou objeto: 'x-api-key': '...', x-channel-key: ..., "authorization": "..."
+    (
+        "header",
+        re.compile(
+            r"(?i)(?:x-api-key|x-channel-key|api[_-]?key|authorization)['\"]?\s*[:=]\s*['\"]?(?:bearer\s+)?[A-Za-z0-9._~+/-]{20,}=*"
+        ),
+    ),
+    ("fernet", re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}=(?![A-Za-z0-9_=-])")),
     ("env_kv", re.compile(r"(?i)\b([A-Z_]*(?:API_KEY|TOKEN|SECRET|PASSWORD))\s*[=:]\s*['\"]?([^\s'\"]{8,})")),
 ]
 # Valores sintéticos do dataset e exemplos do desafio podem aparecer nos logs: mascarar também.
 IGNORAR_ARQUIVOS = {"README.md"}
 
 
+LITERAIS: list[str] = []  # valores de um .env passado em --valores-de (nunca versionado)
+
+
+def carregar_literais(env: Path) -> None:
+    for linha in env.read_text(encoding="utf-8").splitlines():
+        k, _, v = linha.partition("=")
+        v = v.strip().strip("'\"")
+        if k.strip() and not k.lstrip().startswith("#") and len(v) >= 8:
+            LITERAIS.append(v)
+
+
 def limpar(texto: str) -> str:
+    for v in LITERAIS:
+        texto = texto.replace(v, "[REDACTED_ENV]")
     for nome, pat in SEGREDOS:
         if nome == "env_kv":
             texto = pat.sub(lambda m: f"{m.group(1)}=[REDACTED]", texto)
@@ -49,6 +71,7 @@ def limpar(texto: str) -> str:
 
 def achados(texto: str) -> list[str]:
     out = [nome for nome, pat in SEGREDOS if nome != "env_kv" and pat.search(texto)]
+    out += ["env_literal" for v in LITERAIS if v in texto]
     out += [f"pii:{e.kind}" for e in scan(texto)]
     return out
 
@@ -85,4 +108,8 @@ def check() -> int:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
-    sys.exit(check() if ap.parse_args().check else sanitize())
+    ap.add_argument("--valores-de", type=Path, help="um .env: seus valores literais também são removidos")
+    a = ap.parse_args()
+    if a.valores_de:
+        carregar_literais(a.valores_de)
+    sys.exit(check() if a.check else sanitize())
