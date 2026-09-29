@@ -1,0 +1,46 @@
+title: Grafo do atendimento (LangGraph)
+subtitle: Um turno do lead percorre os nós; o estado de cada passo fica no checkpoint
+direction: RIGHT
+nodes:
+  - {id: msg, icon: user, label: Mensagem mascarada}
+  - group: cluster
+    id: g
+    label: StateGraph (thread = conversation_ref)
+    children:
+      - {id: entrada, icon: firewall, label: entrada}
+      - {id: decidir, icon: function, label: decidir}
+      - {id: cotar, icon: service, label: cotar}
+      - {id: handoff, icon: queue, label: handoff}
+      - {id: saida, icon: firewall, label: saida}
+      - {id: humano, icon: users, label: aguardar_humano (interrupt)}
+  - {id: resp, icon: mobile, label: Resposta ao lead}
+  - group: external
+    id: ext
+    label: Apoio
+    children:
+      - {id: llm, icon: llm, label: LLM (extração e frase-ponte)}
+      - {id: tools, icon: service, label: Ferramentas MCP}
+      - {id: ck, icon: db, label: Checkpointer SQLite}
+edges:
+  - {from: msg, to: entrada, step: 1}
+  - {from: entrada, to: decidir, step: 2}
+  - {from: decidir, to: llm, style: dashed}
+  - {from: decidir, to: cotar, label: dados completos e aceite, step: 3}
+  - {from: decidir, to: handoff, label: regra ou pedido, step: 4}
+  - {from: decidir, to: saida, label: pergunta}
+  - {from: cotar, to: tools, style: dashed}
+  - {from: cotar, to: saida}
+  - {from: cotar, to: handoff, label: recusa ou falha}
+  - {from: handoff, to: saida}
+  - {from: saida, to: resp, step: 5}
+  - {from: saida, to: humano, label: acabou de ir, step: 6}
+  - {from: humano, to: saida, style: dashed, label: devolver ou encerrar}
+  - {from: saida, to: ck, style: dashed, step: 7}
+steps:
+  - "entrada: guarda a mensagem já mascarada no transcript; eventos de sistema (retentar cotação) não viram mensagem do lead."
+  - "decidir: extrai dados (regras + LLM validado), pré-valida idade e ano do carro e escolhe: perguntar, confirmar, cotar ou passar para humano."
+  - "cotar: chama a ferramenta MCP cotar; sucesso mostra o preço da API, falha agenda nova tentativa em segundo plano."
+  - "handoff: registra na fila do vendedor com resumo mascarado e um dos 8 motivos."
+  - "saida: frase-ponte opcional e guardrail (sem PII, sem R$ que não veio da API)."
+  - "aguardar_humano: interrupt() pausa a conversa até o vendedor devolver ao bot ou encerrar (Command resume)."
+  - Cada nó grava um checkpoint; o histórico permite auditar e retomar a conversa.

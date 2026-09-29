@@ -12,6 +12,8 @@ Detalhes que o adaptador trata:
 - `conversation_id = omni:<instance>:<chat>`, transformado em hash (`conversation_ref`) antes de ir para estado e logs; o nome do remetente (`sender.name`) é descartado.
 - O Omni reenvia o webhook uma vez em erro 5xx; o agente é idempotente por `event.id`.
 - Mensagem sem texto (mídia, figurinha) vira pedido para escrever.
+- Só eventos `message.received` viram turno; reação só com emoji e outros eventos são ignorados.
+- Conversas `omni:...` só entram por este webhook: `POST /v1/messages` recusa esses ids (403).
 
 ## Plugar num Omni de verdade
 1. Omni no ar (`install.sh --server` ou o chart Helm do repositório do Omni).

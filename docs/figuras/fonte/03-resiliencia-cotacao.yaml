@@ -1,0 +1,39 @@
+title: Resiliência da cotação
+subtitle: A /quote falha 20% e demora 8 s em 10% das chamadas; o lead nunca recebe preço inventado
+direction: RIGHT
+nodes:
+  - {id: grafo, icon: worker, label: Nó cotar do grafo}
+  - group: environment
+    id: tools
+    label: Ferramenta MCP cotar
+    children:
+      - {id: cache, icon: cache, label: Cache da resposta real, product: Redis}
+      - {id: breaker, icon: firewall, label: Circuit breaker, product: Redis}
+      - {id: cliente, icon: service, label: Cliente com timeout e hedging}
+  - {id: quote, icon: api, label: quote-api original}
+  - group: system
+    id: fundo
+    label: Segundo plano (fachada do agente)
+    children:
+      - {id: pend, icon: scheduler, label: "Nova tentativa 5, 20 e 60 s"}
+      - {id: outbox, icon: queue, label: Outbox}
+  - {id: omni, icon: webhook, label: Omni ao lead}
+  - {id: fila, icon: users, label: Fila do vendedor}
+edges:
+  - {from: grafo, to: cache, label: consulta, step: 1}
+  - {from: cache, to: breaker, label: não tem, step: 2}
+  - {from: breaker, to: cliente, label: fechado, step: 3}
+  - {from: cliente, to: quote, label: até 4 tentativas, step: 4}
+  - {from: grafo, to: pend, style: dashed, label: falhou, step: 5}
+  - {from: pend, to: grafo, style: dashed, label: retoma checkpoint}
+  - {from: pend, to: outbox, label: saiu, step: 6}
+  - {from: outbox, to: omni}
+  - {from: pend, to: fila, style: dashed, label: esgotou, step: 7}
+steps:
+  - A mesma cotação no mesmo dia sai do cache (resposta real da API, válida até a meia-noite).
+  - Se a API falhou 3 vezes seguidas, o circuit breaker abre por 15 s e só deixa passar uma sonda.
+  - O cliente corta a chamada em 2,5 s e dispara uma segunda em paralelo aos 1,2 s (hedging).
+  - Retry com jitter até 4 tentativas; 422 e 400 não repetem; resposta 200 inválida conta como falha.
+  - Se ainda assim falhar, o lead é avisado e a tentativa volta em segundo plano, retomando o checkpoint.
+  - Quando a API responde, a cotação real vai pelo outbox até o lead (Omni ou webhook).
+  - Depois de 3 tentativas em segundo plano sem sucesso, a conversa vai para humano (cotacao_indisponivel).

@@ -1,0 +1,50 @@
+title: AutoSeguro Agent | Visão geral
+subtitle: Containers do Docker Compose, canal Omni, LLM gratuito e a quote-api original do desafio
+direction: RIGHT
+nodes:
+  - {id: lead, icon: user, label: Lead no WhatsApp}
+  - {id: omni, icon: webhook, label: Canal (provider webhook), product: Omni}
+  - group: environment
+    id: env
+    label: Docker Compose (ambiente de simulação)
+    children:
+      - {id: api, icon: api, label: API do agente (agent-api), product: FastAPI}
+      - {id: grafo, icon: worker, label: Grafo do atendimento, product: LangGraph}
+      - {id: mcp, icon: service, label: Ferramentas MCP (mcp-tools), product: FastMCP}
+      - {id: quote, icon: api, label: quote-api original, note: submódulo do desafio}
+      - group: network
+        id: estado
+        label: Estado
+        children:
+          - {id: redis, icon: cache, label: "Cache, breaker, fila e outbox", product: Redis}
+          - {id: ck, icon: db, label: Checkpoints da conversa, product: SQLite}
+  - group: external
+    id: ext
+    label: LLM gratuito (só interpreta e redige)
+    children:
+      - {id: groq, icon: llm, label: LLM principal, product: Groq gpt-oss-20b}
+      - {id: orouter, icon: llm, label: LLM reserva, product: OpenRouter}
+  - {id: vend, icon: users, label: Vendedor humano}
+edges:
+  - {from: lead, to: omni, label: mensagem, step: 1}
+  - {from: omni, to: api, label: webhook Bearer, step: 2}
+  - {from: api, to: grafo, label: texto mascarado, step: 3}
+  - {from: grafo, to: groq, label: extrai e redige, bidir: true, step: 4}
+  - {from: groq, to: orouter, style: dashed, label: falhou}
+  - {from: grafo, to: mcp, label: MCP HTTP, step: 5}
+  - {from: mcp, to: quote, label: POST /quote, step: 6}
+  - {from: mcp, to: redis}
+  - {from: api, to: redis, style: dashed, label: "lock, outbox"}
+  - {from: grafo, to: ck, bidir: true, step: 7}
+  - {from: api, to: omni, style: dashed, label: mensagens ativas, step: 8}
+  - {from: vend, to: api, label: fila e operador, step: 9}
+steps:
+  - O lead escreve no WhatsApp; o Omni recebe a mensagem.
+  - O Omni chama o agente como provider webhook (Bearer); o id do canal vira um id opaco (conv_...).
+  - A API mascara PII antes de tudo e entrega o texto ao grafo LangGraph, com lock por conversa no Redis.
+  - O LLM (Groq, reserva OpenRouter) só extrai dados em JSON validado e redige uma frase sem números.
+  - O grafo chama as ferramentas pelo protocolo MCP (planos, pré-validação, cotação, handoff).
+  - A cotação vem da quote-api original do desafio; o valor nunca é gerado pelo LLM.
+  - Cada passo do grafo vira um checkpoint no SQLite (retomada, histórico, humano no circuito).
+  - Mensagens fora do turno (cotação em segundo plano, vendedor) voltam pelo Omni.
+  - O vendedor vê a fila mascarada e responde, devolve ao bot ou encerra.

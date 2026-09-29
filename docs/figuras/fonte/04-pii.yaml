@@ -1,0 +1,39 @@
+title: Proteção de dados pessoais (PII)
+subtitle: O texto bruto nunca chega ao grafo, ao LLM, aos logs, ao checkpoint ou à fila
+direction: RIGHT
+nodes:
+  - {id: lead, icon: user, label: Lead}
+  - group: security
+    id: borda
+    label: Fachada do agente
+    children:
+      - {id: mask, icon: firewall, label: Máscara de PII}
+      - {id: vault, icon: secrets, label: Vault da conversa, note: CEP cifrado Fernet}
+  - group: environment
+    id: dentro
+    label: Só dados mascarados
+    children:
+      - {id: grafo, icon: worker, label: Grafo e checkpoint}
+      - {id: llm, icon: llm, label: LLM}
+      - {id: logs, icon: logs, label: "Logs, trace e fila"}
+      - {id: cotar, icon: service, label: Ferramenta cotar}
+  - {id: quote, icon: api, label: quote-api}
+  - {id: guard, icon: firewall, label: Guardrail de saída}
+edges:
+  - {from: lead, to: mask, label: texto bruto, step: 1}
+  - {from: mask, to: vault, label: token e hash, step: 2}
+  - {from: mask, to: grafo, label: "[CPF_1]", step: 3}
+  - {from: grafo, to: llm, label: só tokens, step: 4}
+  - {from: grafo, to: logs, style: dashed}
+  - {from: grafo, to: cotar, step: 5}
+  - {from: vault, to: cotar, style: dashed, label: CEP real}
+  - {from: cotar, to: quote}
+  - {from: grafo, to: guard, step: 6}
+  - {from: guard, to: lead, label: resposta}
+steps:
+  - O lead pode mandar CPF, e-mail, telefone, placa, CEP e nome na conversa.
+  - A máscara troca cada dado por um token estável ([CPF_1]); o vault guarda só o hash, e o CEP cifrado.
+  - O grafo e o checkpoint só recebem o texto mascarado; o id do canal vira conv_ + hash.
+  - LLM, logs JSON, trace, histórico e fila do vendedor só veem tokens (o cliente LLM ainda bloqueia PII no prompt).
+  - O CEP real só é aberto dentro da ferramenta cotar, porque a /quote precisa dele.
+  - "Toda resposta (bot e vendedor) passa pelo guardrail de saída: sem PII do lead e sem R$ que não veio da API."

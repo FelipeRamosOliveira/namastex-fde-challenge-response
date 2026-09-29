@@ -1,0 +1,33 @@
+title: Dados do desafio e avaliação
+subtitle: Conversas reais do dataset viram casos de teste com a resposta real da API
+direction: RIGHT
+nodes:
+  - group: system
+    id: med
+    label: Pipeline de dados (medalhão)
+    children:
+      - {id: bronze, icon: files, label: Bronze (dataset do desafio)}
+      - {id: silver, icon: storage, label: Silver mascarada, product: Apache Parquet}
+      - {id: gold, icon: files, label: Gold 300 casos}
+  - {id: quote, icon: api, label: quote-api sem falhas}
+  - group: environment
+    id: aval
+    label: Avaliação
+    children:
+      - {id: leads, icon: users, label: Leads simulados, product: fast-agent}
+      - {id: agente, icon: worker, label: Agente no ar}
+      - {id: metr, icon: monitor, label: Métricas e relatório}
+edges:
+  - {from: bronze, to: silver, label: mascara e ordena, step: 1}
+  - {from: silver, to: gold, label: seleciona casos, step: 2}
+  - {from: gold, to: quote, label: grava resposta real, bidir: true, step: 3}
+  - {from: gold, to: leads, label: persona, step: 4}
+  - {from: leads, to: agente, label: conversa, bidir: true, step: 5}
+  - {from: agente, to: metr, step: 6}
+steps:
+  - As conversas do desafio (Bronze) são mascaradas e ordenadas por mensagem na Silver (parquet).
+  - A Gold seleciona 300 casos com os dados esperados (idade, ano, plano, desfecho) e CEP generalizado.
+  - Cada caso guarda a resposta real da quote-api (sem falhas), que vira o preço esperado.
+  - O simulador cria um lead por caso (roteiro determinístico ou LLM via fast-agent).
+  - O lead conversa com o agente no ar, pela mesma API que o canal usa.
+  - "Métricas: ponta a ponta, preço igual ao da API, handoff coerente, PII nas respostas e latência."
