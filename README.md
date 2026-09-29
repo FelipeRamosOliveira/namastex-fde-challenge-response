@@ -26,6 +26,12 @@ docker compose up --build
 | `agent-api` | 8080 | Agente (`POST /v1/messages`) |
 | `redis` | interno | Cache e circuit breaker |
 
+#### Modo desenvolvimento (sem rebuild a cada mudança)
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+A pasta `src/` é montada nos containers `agent-api` e `mcp-tools`, que recarregam sozinhos quando um arquivo muda (cerca de 1 s). Rebuild (`... up -d --build`) só quando mudarem `pyproject.toml`, `uv.lock` ou o `Dockerfile`.
+
 Conversa de exemplo:
 ```bash
 curl -s localhost:8080/v1/messages -H 'content-type: application/json' \

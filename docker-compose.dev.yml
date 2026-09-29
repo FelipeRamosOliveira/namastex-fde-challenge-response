@@ -1,0 +1,25 @@
+# Modo desenvolvimento: código montado do host + recarga automática. Sem rebuild ao mudar src/.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Rebuild só quando mudarem dependências (pyproject.toml / uv.lock) ou o Dockerfile:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Polling ligado porque no Windows/WSL2 os eventos de arquivo do host não chegam ao container.
+services:
+  mcp-tools:
+    command: ["watchfiles", "--filter", "python", "python -m autoseguro.tools.mcp_server", "/app/src"]
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./src:/app/src:ro
+
+  agent-api:
+    command:
+      ["uvicorn", "autoseguro.api.app:app", "--host", "0.0.0.0", "--port", "8080",
+       "--reload", "--reload-dir", "/app/src"]
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./src:/app/src:ro
+      - agent-data:/app/data/runtime

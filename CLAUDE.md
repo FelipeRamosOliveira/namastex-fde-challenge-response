@@ -21,6 +21,7 @@ Agente de WhatsApp que qualifica leads, cota seguro auto na API do desafio e dec
 - Lint: `uv run ruff check src tests && uv run ruff format --check src tests`
 - Dados: `uv run python -m autoseguro.data.pipeline silver` e `... gold --quote-url http://localhost:8000`
 - Tudo no Docker: `docker compose up --build`
+- Docker em modo dev (código montado, recarga automática): `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
 - API local: `uv run uvicorn autoseguro.api.app:app --port 8080`
 
 ## Estrutura
