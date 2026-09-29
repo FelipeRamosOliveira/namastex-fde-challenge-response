@@ -59,3 +59,6 @@ Felipe subiu o `docker compose` no Windows; a IA testou pelo navegador do app Cl
 - Rastreio: log JSON por linha dos eventos, exportador da execução completa, CEP cifrado com Fernet no checkpoint (`VAULT_KEY`).
 - Achado pelo scanner no exportador: ids hexadecimais (`msg_2b2c99598446`) davam falso positivo de CEP e telefone, e a seção "como o lead viu" levava texto bruto. Ids internos passaram a ser ignorados pelo scanner (com teste) e a seção passou a ser mascarada.
 - Avaliação na Gold (300 conversas) e estresse (50% de falha): resultados em `docs/avaliacao.md`.
+- Teste ao vivo da etapa 5 no Docker (via navegador do app): handoff pausado, mensagem do lead durante a pausa, vendedor respondendo, devolução ao bot retomando no dado que faltava, segundo "devolver" recusado (409), 30 checkpoints no histórico, CPF mascarado na fila e no trace. Ajuste: a frase-ponte do LLM saía antes da saudação num "oi" simples; removida no primeiro turno.
+- Felipe corrigiu o `docker-compose.yml` (healthchecks e `agent-api` esperando o `mcp-tools` ficar saudável): o agente caía ao subir antes do MCP. Commit dele trazido para o repositório.
+- A segunda revisão independente (etapas 5 a 8) foi interrompida pelo Felipe antes de rodar.

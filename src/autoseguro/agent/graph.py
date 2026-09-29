@@ -243,6 +243,8 @@ def build_graph(
         sem_prog = 0 if progresso else state.get("turnos_sem_progresso", 0) + 1
         # frase natural do redator só quando o lead perguntou algo ou falou fora do fluxo
         ponte = "?" in text or (not ex.slots and not (ex.intents - {"saudacao"}))
+        if stage == "novo" and "?" not in text:
+            ponte = False  # a saudação do fluxo já responde um "oi" (teste ao vivo: frase duplicada)
         base = {
             "slots": slots,
             "turnos_sem_progresso": sem_prog,

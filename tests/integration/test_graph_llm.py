@@ -78,3 +78,12 @@ async def test_conversa_livre_com_llm_e_valor_da_api(stable_quote_url, tmp_path)
     fontes = {e["fonte"] for e in t["events"] if e["type"] == "extracao"}
     assert any(f.startswith("llm:groq") for f in fontes)
     assert any(e["type"] == "redator" and e["usada"] for e in t["events"])
+
+
+async def test_oi_inicial_nao_ganha_frase_do_redator(stable_quote_url, tmp_path):
+    fake = FakeLLM(redigir=lambda t: "Tudo bem? Como posso ajudar?")
+    llm = LLMClient([GROQ], MemoryStore(), fake.http())
+    s = Settings(_env_file=None, quote_api_url=stable_quote_url, checkpoint_db=str(tmp_path / "ck.sqlite"))
+    async with AutoSeguroAgent(s, llm=llm) as ag:
+        r = await ag.handle("L2", "oi")
+    assert r["reply"].startswith("Oi! Aqui é o assistente")
