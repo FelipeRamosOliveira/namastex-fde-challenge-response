@@ -153,3 +153,13 @@ def test_status_do_llm_ligado_e_desligado():
     assert ligado == {"ativo": True, "provedores": ["groq"], "aviso": None}
     desligado = AutoSeguroAgent._status_llm(None)
     assert desligado["ativo"] is False and "GROQ_API_KEY ausente" in desligado["aviso"]
+
+
+def test_erro_do_fast_agent_nao_vira_fala_do_lead():
+    import pytest
+
+    from autoseguro.sim.leads import LeadFastAgent
+
+    with pytest.raises(RuntimeError, match="LLM do lead falhou"):
+        LeadFastAgent._checa("I hit an internal error while calling the model: groq request failed")
+    assert LeadFastAgent._checa("oi, quero cotar") == "oi, quero cotar"

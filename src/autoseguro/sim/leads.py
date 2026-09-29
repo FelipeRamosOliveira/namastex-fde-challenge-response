@@ -148,13 +148,20 @@ class LeadFastAgent:
             self._app = await self._ctx.__aenter__()
         return self._app
 
+    @staticmethod
+    def _checa(txt: str) -> str:
+        # o fast-agent devolve o erro do provedor como texto; não pode virar fala do lead
+        if txt.startswith("I hit an internal error"):
+            raise RuntimeError(f"LLM do lead falhou: {txt[:160]}")
+        return txt
+
     async def abrir(self) -> str:
         app = await self._garantir()
-        return await app.lead.send("Mande a primeira mensagem para a seguradora.")
+        return self._checa(await app.lead.send("Mande a primeira mensagem para a seguradora."))
 
     async def responder(self, bot: str) -> str | None:
         app = await self._garantir()
-        txt = (await app.lead.send(f"Atendente: {bot}")).strip()
+        txt = self._checa((await app.lead.send(f"Atendente: {bot}")).strip())
         return None if not txt or re.fullmatch(r"\W*FIM\W*", txt) else txt
 
     async def fechar(self) -> None:

@@ -186,12 +186,17 @@ async def avaliar(
         async with sem:
             try:
                 return await conversar(p, ld, enviar, ativas)
+            except RuntimeError as e:  # LLM do lead fora (cota, rede): a conversa não conta na métrica
+                return {"persona": p, "erro_lead": str(e)[:200]}
             finally:
                 if isinstance(ld, LeadFastAgent):
                     await ld.fechar()
 
-    resultados = await asyncio.gather(*[um(c) for c in carregar_gold(n)])
-    return metricas(resultados), resultados
+    todos = await asyncio.gather(*[um(c) for c in carregar_gold(n)])
+    validos = [r for r in todos if "erro_lead" not in r]
+    m = metricas(validos)
+    m["conversas_com_erro_do_lead"] = len(todos) - len(validos)
+    return m, validos
 
 
 def main() -> None:
@@ -200,6 +205,7 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--lead", choices=["roteiro", "fastagent"], default="roteiro")
     ap.add_argument("--saida", default=str(ROOT / "docs" / "avaliacao.json"))
+    ap.add_argument("--concorrencia", type=int, default=8, help="conversas em paralelo (Groq grátis: 1 ou 2)")
     ap.add_argument("--channel-key", default=os.environ.get("CHANNEL_API_KEY"), help="x-channel-key")
     a = ap.parse_args()
     headers = {"x-channel-key": a.channel_key} if a.channel_key else {}
@@ -213,7 +219,7 @@ def main() -> None:
             async def ativas(cid):
                 return (await c.get(f"/v1/conversations/{cid}/outbox")).json()
 
-            return await avaliar(enviar, ativas, a.n, a.lead)
+            return await avaliar(enviar, ativas, a.n, a.lead, a.concorrencia)
 
     m, res = asyncio.run(run())
     salvar(Path(a.saida), m, res)
