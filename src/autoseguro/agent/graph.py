@@ -1,17 +1,21 @@
 """Grafo LangGraph do atendimento.
 
-    entrada ─▶ decidir ─┬─▶ cotar ───┬─▶ saida ─▶ END
-       (PII)            │            └─▶ handoff ─▶ saida
-                        ├─▶ handoff ─▶ saida
-                        └─▶ saida
+    entrada -> decidir -> cotar | handoff | saida
+    cotar   -> saida | handoff
+    handoff -> saida
+    saida   -> aguardar_humano (interrupt, se acabou de ir para humano) | END
+    aguardar_humano -> saida -> END   (retomado por Command(resume=...) do operador)
 
 - entrada: guardrail de PII (mascara e guarda originais no vault da conversa)
-- decidir: extrai dados/intenções, pré-valida regras, escolhe o próximo passo
-- cotar:   chama a ferramenta MCP `cotar`; resposta montada por template com valores da API
+- decidir: extrai dados/intenções, pré-valida regras, escolhe o próximo passo;
+           também trata eventos de sistema (nova tentativa de cotação em segundo plano)
+- cotar:   ferramenta MCP `cotar`. Se a API estiver fora, NÃO vai direto para humano:
+           avisa o lead, fica em `aguardando_cotacao` e pede nova tentativa em segundo plano
 - handoff: registra na fila do vendedor com resumo mascarado
 - saida:   guardrail de saída (PII + valores em R$ só da API) e evento de rastreio
+- aguardar_humano: `interrupt()` pausa a conversa até o operador devolver ao bot ou encerrar
 
-Estado persistido por conversa (thread_id = conversation_id) no checkpointer.
+Estado persistido por conversa (thread_id = conversation_ref) no checkpointer.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from datetime import date, datetime
 from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 
 from autoseguro.agent import templates as T
 from autoseguro.agent.extract import CAMPOS, Extractor, RuleExtractor
@@ -30,7 +35,8 @@ from autoseguro.agent.gateway import ToolGateway
 from autoseguro.guardrails.output import check_output
 from autoseguro.guardrails.pii import PiiVault, mask
 
-Stage = Literal["novo", "coletando", "confirmando", "cotado", "handoff"]
+Stage = Literal["novo", "coletando", "confirmando", "cotado", "aguardando_cotacao", "handoff", "encerrado"]
+EVENTO_RETENTAR = "retentar_cotacao"
 
 
 _MIDIA_PT = {"image": "imagem", "document": "documento", "audio": "audio", "video": "video"}
@@ -57,6 +63,9 @@ class AgentState(TypedDict, total=False):
     turnos_sem_progresso: int
     midia_count: int
     objecoes: int
+    tentativas_fundo: int  # novas tentativas de cotação em segundo plano já feitas
+    agendar_retry: float | None  # segundos até a próxima tentativa (lido pela fachada)
+    stage_antes_handoff: str | None
     transcript: Annotated[list[dict[str, Any]], operator.add]
     events: Annotated[list[dict[str, Any]], operator.add]
 
@@ -79,6 +88,7 @@ def build_graph(
     max_turnos_sem_progresso: int = 6,
     hoje: Any = date.today,
     redator: Any = None,
+    retry_delays: tuple[float, ...] = (5.0, 20.0, 60.0),
 ):
     extractor = extractor or RuleExtractor()
     planos_cache: dict[str, Any] = {}
@@ -95,6 +105,16 @@ def build_graph(
     async def entrada(state: AgentState) -> dict[str, Any]:
         vault = PiiVault.from_dict(state.get("vault"))
         inc = state["incoming"]
+        if inc.get("message_type") == "system":  # evento interno, não é mensagem do lead
+            return {
+                "turn_text": "",
+                "reply": "",
+                "reply_prefix": "",
+                "handoff_pendente": None,
+                "ponte": False,
+                "agendar_retry": None,
+                "events": [_event(state, "evento_sistema", evento=inc.get("text"))],
+            }
         masked = mask(inc["text"], vault)
         upd: dict[str, Any] = {
             "turn_text": masked.text,
@@ -103,6 +123,7 @@ def build_graph(
             "reply_prefix": "",
             "handoff_pendente": None,
             "ponte": False,
+            "agendar_retry": None,
             "transcript": [
                 {
                     "role": "lead",
@@ -121,13 +142,30 @@ def build_graph(
                 )
             ],
         }
-        if not state.get("stage"):
-            upd.update(stage="novo", slots={}, quotes=[], turnos_sem_progresso=0, midia_count=0, objecoes=0)
+        if not state.get("stage") or state.get("stage") == "encerrado":  # conversa nova (ou reaberta)
+            upd.update(
+                stage="novo",
+                slots={},
+                quotes=[],
+                quote_atual=None,
+                handoff=None,
+                awaiting=None,
+                turnos_sem_progresso=0,
+                midia_count=0,
+                objecoes=0,
+                tentativas_fundo=0,
+                planos_mostrados=False,
+            )
         return upd
 
     # ------------------------------------------------------------------ decidir
     async def decidir(state: AgentState) -> dict[str, Any]:
         stage = state.get("stage", "novo")
+        inc = state.get("incoming") or {}
+        if inc.get("message_type") == "system":
+            if inc.get("text") == EVENTO_RETENTAR and stage == "aguardando_cotacao":
+                return {"acao": "cotar", "tentativas_fundo": state.get("tentativas_fundo", 0) + 1}
+            return {"acao": "responder", "reply": ""}  # evento sem efeito: nada a dizer
         if stage == "handoff":
             return {"acao": "responder", "reply": T.POS_HANDOFF}
 
@@ -172,6 +210,8 @@ def build_graph(
             return handoff("pedido_humano")
         if "fora_de_escopo" in ex.intents:
             return handoff("fora_de_escopo")
+        if stage == "aguardando_cotacao":  # a nova tentativa já está agendada; só tranquiliza o lead
+            return {"acao": "responder", "reply": T.AINDA_TENTANDO, "events": events}
 
         # ---- incorpora dados novos
         slots = dict(state.get("slots") or {})
@@ -352,13 +392,16 @@ def build_graph(
         match out["status"]:
             case "ok":
                 q = {**out["quote"], "_quote_id": out["quote_id"]}
+                de_fundo = state.get("stage") == "aguardando_cotacao"
+                prefixo = T.CONSEGUI if de_fundo else state.get("reply_prefix", "")
                 return {
                     "stage": "cotado",
                     "awaiting": None,
                     "quote_atual": q,
                     "quotes": [*state.get("quotes", []), q],
+                    "tentativas_fundo": 0,
                     "acao": "responder",
-                    "reply": state.get("reply_prefix", "") + T.apresentar(q),
+                    "reply": prefixo + T.apresentar(q),
                     "events": [ev],
                 }
             case "recusada":
@@ -369,9 +412,27 @@ def build_graph(
                 }
             case "invalida":
                 return {"acao": "responder", "stage": "coletando", "reply": T.CORRIGIR, "events": [ev]}
-            case _:  # indisponivel | circuito_aberto (etapa 5: nova tentativa em segundo plano)
+            case _:  # indisponivel | circuito_aberto
+                feitas = state.get("tentativas_fundo", 0)
+                if feitas < len(retry_delays):
+                    # não trava e não inventa: avisa uma vez e tenta de novo em segundo plano
+                    primeira = state.get("stage") != "aguardando_cotacao"
+                    return {
+                        "stage": "aguardando_cotacao",
+                        "awaiting": None,
+                        "acao": "responder",
+                        "agendar_retry": retry_delays[feitas],
+                        "reply": T.AGUARDANDO_COTACAO if primeira else "",
+                        "events": [
+                            ev,
+                            _event(
+                                state, "retry_agendado", em_s=retry_delays[feitas], tentativa_fundo=feitas + 1
+                            ),
+                        ],
+                    }
                 return {
                     "acao": "handoff",
+                    "tentativas_fundo": 0,
                     "handoff_pendente": {"motivo": "cotacao_indisponivel", "detalhe": out.get("motivo")},
                     "events": [ev],
                 }
@@ -407,6 +468,7 @@ def build_graph(
         reply = T.recusa(hp.get("detalhe")) if hp["motivo"] == "recusa_regra" else T.HANDOFF[hp["motivo"]]
         return {
             "stage": "handoff",
+            "stage_antes_handoff": state.get("stage"),
             "awaiting": None,
             "handoff": item,
             "acao": "responder",
@@ -424,6 +486,8 @@ def build_graph(
 
     # ------------------------------------------------------------------ saida
     async def saida(state: AgentState) -> dict[str, Any]:
+        if not state.get("reply") and (state.get("incoming") or {}).get("message_type") == "system":
+            return {"reply": ""}  # tentativa em segundo plano sem novidade: silêncio
         reply = state.get("reply") or T.FALLBACK_SEGURO
         permitidos = T.valores_permitidos(state.get("quotes") or [])
         events = []
@@ -446,6 +510,43 @@ def build_graph(
             "events": events,
         }
 
+    # ------------------------------------------------------------------ aguardar_humano
+    async def aguardar_humano(state: AgentState) -> dict[str, Any]:
+        """Pausa a conversa (interrupt) até o operador decidir. Retomada por Command(resume=...)."""
+        decisao = interrupt({"tipo": "handoff", "handoff": state.get("handoff")})
+        acao = (decisao or {}).get("acao")
+        ev = _event(state, "operador", acao=acao)
+        if acao == "devolver":
+            slots = state.get("slots") or {}
+            faltando = [c for c in CAMPOS if not slots.get(c)]
+            base = {
+                "handoff": None,
+                "handoff_pendente": None,
+                "midia_count": 0,
+                "objecoes": 0,
+                "turnos_sem_progresso": 0,
+                "tentativas_fundo": 0,
+                "events": [ev],
+            }
+            if faltando:
+                return {
+                    **base,
+                    "stage": "coletando",
+                    "awaiting": faltando[0],
+                    "reply": T.VOLTEI + T.perguntar(faltando[0], await planos()),
+                }
+            return {
+                **base,
+                "stage": "confirmando",
+                "awaiting": "confirmacao",
+                "reply": T.VOLTEI + T.confirmar(slots, state.get("cep_prefixo")),
+            }
+        return {"stage": "encerrado", "handoff_pendente": None, "reply": T.ENCERRADO, "events": [ev]}
+
+    def rota_saida(state: AgentState) -> str:
+        acabou_de_ir = state.get("stage") == "handoff" and state.get("handoff_pendente")
+        return "aguardar_humano" if acabou_de_ir else END
+
     def rota_decidir(state: AgentState) -> str:
         return {"cotar": "cotar", "handoff": "handoff"}.get(state.get("acao", ""), "saida")
 
@@ -458,6 +559,7 @@ def build_graph(
     g.add_node("cotar", cotar)
     g.add_node("handoff", handoff)
     g.add_node("saida", saida)
+    g.add_node("aguardar_humano", aguardar_humano)
     g.add_edge(START, "entrada")
     g.add_edge("entrada", "decidir")
     g.add_conditional_edges(
@@ -465,5 +567,6 @@ def build_graph(
     )
     g.add_conditional_edges("cotar", rota_cotar, {"handoff": "handoff", "saida": "saida"})
     g.add_edge("handoff", "saida")
-    g.add_edge("saida", END)
+    g.add_conditional_edges("saida", rota_saida, {"aguardar_humano": "aguardar_humano", END: END})
+    g.add_edge("aguardar_humano", "saida")
     return g.compile(checkpointer=checkpointer)

@@ -47,3 +47,8 @@ Felipe subiu o `docker compose` no Windows; a IA testou pelo navegador do app Cl
   - Lista de planos repetida quando o lead perguntou preço ou o que é franquia: o LLM marcava `pergunta_planos`. Prompt mais estrito e a lista aparece uma vez só.
   - Saudação duplicada: a frase-ponte do LLM também dizia "Oi". Prompt do redator proíbe cumprimento.
   - Primeiro turno levou 8,9 s (conexão MCP, /planos e primeira chamada ao Groq a frio). O agente agora aquece a conexão MCP e o cache do /planos ao subir.
+
+## Sessão 1, continuação (29/09/2026): reteste ao vivo e etapa 5
+- Reteste ao vivo (modo dev): correções confirmadas; a /quote falhou 2 vezes (5xx) e o cliente acertou na 3a tentativa, ao vivo. Achado novo: "isso, pode cotar" não confirmou porque o aceite da regra era descartado quando o LLM não marcava. Corrigido: intenções = LLM + regras.
+- Felipe decidiu manter o LangGraph como orquestrador por curiosidade técnica; a IA propôs usar recursos dele na etapa 5 e prototipou antes de codar: `interrupt()` + `aupdate_state(as_node=...)` + `Command(resume=...)` se comportaram como esperado (mensagem do lead durante a pausa não acorda o grafo; retomada não repete o registro do handoff).
+- Etapa 5 (ADR 0008): cotação em segundo plano retomando o checkpoint, outbox, humano no circuito, lock no Redis, histórico de checkpoints. Um teste mostrou uma corrida (trace já em handoff antes da entrega no outbox); o teste passou a esperar a entrega.

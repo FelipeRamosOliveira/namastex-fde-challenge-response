@@ -39,6 +39,10 @@ class Settings(BaseSettings):
 
     # --- Conversa ---
     max_turnos_sem_progresso: int = 6
+    # Novas tentativas de cotação em segundo plano antes de ir para humano (segundos após cada falha)
+    retry_fundo_delays_s: list[float] = [5.0, 20.0, 60.0]
+    # Entrega ativa ao canal (Omni ou outro); sem URL, o canal busca em GET .../outbox
+    outbound_webhook_url: str | None = None
 
 
 @lru_cache

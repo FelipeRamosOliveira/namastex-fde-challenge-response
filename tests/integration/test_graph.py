@@ -106,13 +106,25 @@ async def test_retomada_apos_reiniciar(stable_quote_url, tmp_path):
         assert t["slots"]["idade"] == 35 and t["slots"]["plano_id"] == "premium"
 
 
-async def test_api_fora_vai_para_humano_sem_preco(quote_api, tmp_path):
+async def test_api_fora_tenta_em_segundo_plano_e_depois_humano(quote_api, tmp_path):
+    import asyncio
+
     with quote_api(failure=1.0) as url:
-        async with AutoSeguroAgent(cfg(url, tmp_path, quote_max_attempts=2)) as ag:
+        s = cfg(url, tmp_path, quote_max_attempts=2, retry_fundo_delays_s=[0.1, 0.1])
+        async with AutoSeguroAgent(s) as ag:
             await conversa(ag, "c6", FELIZ)
             r = await ag.handle("c6", "sim")
-    assert r["stage"] == "handoff" and r["handoff"]["motivo"] == "cotacao_indisponivel"
-    assert "R$" not in r["reply"]
+            assert r["stage"] == "aguardando_cotacao" and "R$" not in r["reply"]
+            assert "tentando de novo" in r["reply"]
+            for _ in range(50):  # espera as 2 novas tentativas em segundo plano e a entrega
+                await asyncio.sleep(0.1)
+                ativas = await ag.mensagens_ativas("c6")
+                if ativas:
+                    break
+            t = await ag.trace("c6")
+    assert t["stage"] == "handoff" and t["handoff"]["motivo"] == "cotacao_indisponivel"
+    assert len([e for e in t["events"] if e["type"] == "cotacao"]) == 3  # 1 na hora + 2 em segundo plano
+    assert ativas and "atendente" in ativas[-1]["texto"] and "R$" not in ativas[-1]["texto"]
 
 
 async def test_pii_nunca_sai_do_vault(stable_quote_url, tmp_path):
@@ -276,7 +288,7 @@ async def test_lista_de_planos_aparece_uma_vez(stable_quote_url, tmp_path):
     async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path)) as ag:
         await ag.handle("c18", "oi")
         r1 = await ag.handle("c18", "quais planos vocês têm? é um gol 2020")
-        r2 = await ag.handle("c18", "tenho 40 anos")
+        await ag.handle("c18", "tenho 40 anos")
         r3 = await ag.handle("c18", "cep 01310-100")
     assert "Temos 3 planos" in r1["reply"]
     assert "Temos 3 planos" not in r3["reply"] and "Essencial, Completo ou Premium" in r3["reply"]

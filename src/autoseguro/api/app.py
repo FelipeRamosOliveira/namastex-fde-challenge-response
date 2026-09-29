@@ -1,6 +1,7 @@
 """API assíncrona do agente.
 
-Etapa 3: endpoint de simulação de canal. Etapa 6 adiciona o webhook do Omni.
+Canal: POST /v1/messages (resposta síncrona) e GET .../outbox (mensagens ativas).
+Operador: fila de handoff, responder, devolver ao bot, encerrar. Rastreio: trace e histórico.
 Rodar: uv run uvicorn autoseguro.api.app:app --port 8080
 """
 
@@ -24,7 +25,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title="AutoSeguro Agent", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="AutoSeguro Agent", version="0.5.0", lifespan=lifespan)
 
 
 class MensagemIn(BaseModel):
@@ -63,6 +64,38 @@ async def health():
 @app.post("/v1/messages", dependencies=[Depends(exige_chave_canal)])
 async def receber(m: MensagemIn, ag: AutoSeguroAgent = Depends(agent)):
     return await ag.handle(m.conversation_id, m.text, m.message_type, m.message_id)
+
+
+@app.get("/v1/conversations/{conversation_id}/outbox", dependencies=[Depends(exige_chave_canal)])
+async def outbox(conversation_id: str, depois_de: int = 0, ag: AutoSeguroAgent = Depends(agent)):
+    """Mensagens ativas (cotação em segundo plano, humano, devolução) para o canal entregar."""
+    return await ag.mensagens_ativas(conversation_id, depois_de)
+
+
+class AcaoOperador(BaseModel):
+    acao: Literal["responder", "devolver", "encerrar"]
+    texto: str | None = Field(default=None, max_length=4000)
+
+
+@app.post("/v1/conversations/{conversation_id}/operador", dependencies=[Depends(exige_chave)])
+async def operador(conversation_id: str, a: AcaoOperador, ag: AutoSeguroAgent = Depends(agent)):
+    """Painel do vendedor: responder o lead, devolver a conversa ao bot ou encerrar."""
+    try:
+        return await ag.operador(conversation_id, a.acao, a.texto)
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
+
+
+@app.get("/v1/handoffs", dependencies=[Depends(exige_chave)])
+async def handoffs(ag: AutoSeguroAgent = Depends(agent)):
+    """Fila do vendedor (dados mascarados)."""
+    return await ag.handoffs.listar()
+
+
+@app.get("/v1/conversations/{conversation_id}/historico", dependencies=[Depends(exige_chave)])
+async def historico(conversation_id: str, ag: AutoSeguroAgent = Depends(agent)):
+    """Cada checkpoint do LangGraph da conversa (viagem no tempo)."""
+    return await ag.historico(conversation_id)
 
 
 @app.get("/v1/conversations/{conversation_id}/trace", dependencies=[Depends(exige_chave)])

@@ -135,3 +135,14 @@ POS_HANDOFF = "Seu atendimento já está com a nossa equipe. Em breve alguém te
 PEDIR_TEXTO = "Não consigo abrir arquivos, áudios ou fotos por aqui. Pode me mandar por escrito?"
 CORRIGIR = "Sem problema. O que está errado? Pode me mandar o dado certo."
 FALLBACK_SEGURO = "Desculpa, tive um problema aqui. Pode repetir, por favor?"
+
+AGUARDANDO_COTACAO = (
+    "O sistema de cotação está instável agora e eu não vou te passar um valor sem ter certeza. "
+    "Já estou tentando de novo e te mando a cotação aqui assim que sair."
+)
+AINDA_TENTANDO = "Ainda estou tentando cotar com o sistema. Assim que sair, te mando por aqui."
+CONSEGUI = "Consegui! "
+VOLTEI = "Oi de novo! O atendente me devolveu a conversa. "
+ENCERRADO = (
+    "Seu atendimento foi encerrado pela nossa equipe. Se quiser uma nova cotação, é só mandar mensagem."
+)

@@ -128,7 +128,9 @@ class LLMExtractor:
         out.slots.update(regras.slots)
 
         llm_intents = {i for i in data.get("intents") or [] if i in INTENTS}
-        out.intents = llm_intents | (regras.intents & SEGURANCA)
+        # União com as regras: teste ao vivo mostrou o LLM sem "aceite" em "isso, pode cotar".
+        # Conflito aceite x negação anula os dois (o fluxo pergunta de novo).
+        out.intents = llm_intents | regras.intents
         if {"aceite", "negacao"} <= out.intents:  # contraditório: não age
             out.intents -= {"aceite", "negacao"}
         return out

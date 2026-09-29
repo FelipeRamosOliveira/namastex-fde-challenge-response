@@ -2,7 +2,7 @@
 
 Agente de WhatsApp da seguradora fictícia AutoSeguro (desafio FDE da Namastex): conversa com o lead, qualifica, cota na API do desafio e decide quando passar para um vendedor humano. Não trava e não inventa preço quando a API falha.
 
-> Status: etapas 0 a 4 prontas (fundação, dados, ferramentas MCP resilientes, grafo LangGraph, LLM Groq com guardrails). Plano completo em `docs/PLANO.md`.
+> Status: etapas 0 a 5 prontas (fundação, dados, ferramentas MCP resilientes, grafo LangGraph, LLM Groq com guardrails, cotação em segundo plano e humano no circuito). Plano completo em `docs/PLANO.md`.
 
 ## Regras de ouro
 | Regra | Como é garantida | Prova |
@@ -77,19 +77,30 @@ Fachada: lock por conversa, máscara antes do grafo, id opaco, idempotência por
 | 0004 | Máscara com tokens estáveis e vault por conversa | LLM e logs nunca veem o dado; o CEP real só é usado na cotação |
 | 0005 | Valores só via template a partir da API | Preço inventado é impossível por construção e bloqueado na saída |
 | 0006 | Dataset em Bronze, Silver e Gold | Gold com respostas reais da API vira base de avaliação |
+| 0008 | Cotação em segundo plano retomando o checkpoint; humano no circuito com `interrupt()` | Queda transitória não vira handoff; vendedor responde, devolve ao bot ou encerra |
 | 0007 | LLM (Groq gpt-oss-20b, reserva OpenRouter) só interpreta e redige frase-ponte sem números | Entende texto livre sem poder decidir fluxo nem preço; falha do LLM cai nas regras |
 
 ## Quando o agente passa para um humano
 | Motivo | Quando |
 |---|---|
 | `recusa_regra` | Pré-validação ou 422: idade acima de 75, veículo com mais de 20 anos |
-| `cotacao_indisponivel` | `/quote` indisponível depois das tentativas (etapa 5: nova tentativa em segundo plano antes) |
+| `cotacao_indisponivel` | `/quote` segue fora depois das tentativas rápidas **e** das novas tentativas em segundo plano (5, 20 e 60 s); até lá o lead é avisado e recebe a cotação assim que sair |
 | `pedido_humano` | Lead pede atendente |
 | `objecao_preco` | Segunda objeção de preço, ou objeção citando concorrente (a primeira recebe a cotação real do Essencial) |
 | `fora_de_escopo` | Sinistro, cancelamento, outro produto |
 | `midia` | Segunda mídia depois do pedido para escrever |
 | `sem_progresso` | 6 turnos sem dado novo |
 | `pronto_para_fechar` | Lead aceita a proposta: emissão de apólice e boleto é humana, como no dataset |
+
+## Endpoints
+| Rota | Quem usa | Chave |
+|---|---|---|
+| `POST /v1/messages` | Canal (Omni) | `x-channel-key` se `CHANNEL_API_KEY` definida |
+| `GET /v1/conversations/{id}/outbox` | Canal: mensagens ativas (cotação em segundo plano, humano) | idem |
+| `GET /v1/handoffs` | Vendedor: fila mascarada | `x-api-key` (`TRACE_API_KEY`) |
+| `POST /v1/conversations/{id}/operador` | Vendedor: `responder`, `devolver`, `encerrar` | idem |
+| `GET /v1/conversations/{id}/trace` | Rastreio mascarado | idem |
+| `GET /v1/conversations/{id}/historico` | Checkpoints do LangGraph (viagem no tempo) | idem |
 
 ## Rastreio
 Cada turno gera eventos com `event_id`, `conversation_id` (opaco: hash do id do canal) e `message_id`: `message_in` (com os tipos de PII detectados), `extracao`, `pre_validacao`, `cotacao` (com `quote_request_id`, `quote_id`, tentativas, status HTTP, latência, hedge e cache), `handoff` e `message_out`.

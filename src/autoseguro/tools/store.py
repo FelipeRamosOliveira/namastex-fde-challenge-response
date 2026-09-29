@@ -5,8 +5,10 @@ Redis em produção/Docker; memória nos testes e quando REDIS_URL não está de
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Protocol
 
 
@@ -18,12 +20,19 @@ class KVStore(Protocol):
     async def set_if_absent(self, key: str, value: Any, ttl_s: int | None = None) -> bool: ...
     async def push(self, key: str, value: Any) -> None: ...
     async def list_all(self, key: str) -> list[Any]: ...
+    def lock(self, key: str, timeout_s: float = 60) -> AbstractAsyncContextManager: ...
 
 
 class MemoryStore:
     def __init__(self, clock=time.monotonic) -> None:
         self._d: dict[str, tuple[Any, float | None]] = {}
         self._clock = clock
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    @asynccontextmanager
+    async def lock(self, key: str, timeout_s: float = 60):
+        async with self._locks.setdefault(key, asyncio.Lock()):
+            yield
 
     def _alive(self, key: str) -> bool:
         if key not in self._d:
@@ -65,11 +74,17 @@ class MemoryStore:
 
 
 class RedisStore:
-    def __init__(self, url: str, prefix: str = "autoseguro:") -> None:
+    def __init__(self, url: str | None = None, prefix: str = "autoseguro:", client=None) -> None:
         import redis.asyncio as redis
 
-        self._r = redis.from_url(url, decode_responses=True)
+        self._r = client or redis.from_url(url, decode_responses=True)
         self._p = prefix
+
+    @asynccontextmanager
+    async def lock(self, key: str, timeout_s: float = 60):
+        """Lock distribuído: várias réplicas do agente não processam a mesma conversa juntas."""
+        async with self._r.lock(self._p + "lock:" + key, timeout=timeout_s, blocking_timeout=timeout_s):
+            yield
 
     async def get_json(self, key: str) -> Any | None:
         raw = await self._r.get(self._p + key)

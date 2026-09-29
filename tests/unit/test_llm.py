@@ -135,3 +135,10 @@ async def test_regra_explicita_vence_o_llm():
     assert (await extr.extract("quero o mais completo", "plano_id", HOJE)).slots["plano_id"] == "premium"
     ex = await extr.extract("pode ser a partir de semana que vem", "data_inicio", HOJE)
     assert ex.slots["data_inicio"] == date(2026, 10, 6)
+
+
+async def test_aceite_da_regra_nao_se_perde():
+    """Teste ao vivo: o LLM não marcou aceite em "isso, pode cotar"."""
+    fake = FakeLLM(extrair=lambda t: {"intents": []})
+    ex = await LLMExtractor(cliente(fake)).extract("isso, pode cotar", "confirmacao", HOJE)
+    assert "aceite" in ex.intents
