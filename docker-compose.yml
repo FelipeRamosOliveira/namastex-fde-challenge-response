@@ -1,0 +1,55 @@
+# Ambiente de simulação completo.
+#   docker compose up --build
+# Agente:      http://localhost:8080  (POST /v1/messages)
+# MCP tools:   http://localhost:8100/mcp
+# Quote API:   http://localhost:8000  (ORIGINAL do desafio, via submódulo vendor/challenge)
+services:
+  quote-api:
+    build: ./vendor/challenge/quote-service
+    ports: ["8000:8000"]
+    environment:
+      # instabilidade do desafio, como veio (ajuste para testar)
+      QUOTE_FAILURE_RATE: "${QUOTE_FAILURE_RATE:-0.20}"
+      QUOTE_SLOW_RATE: "${QUOTE_SLOW_RATE:-0.10}"
+      QUOTE_SLOW_SECONDS: "${QUOTE_SLOW_SECONDS:-8}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  mcp-tools:
+    build: .
+    command: ["python", "-m", "autoseguro.tools.mcp_server"]
+    ports: ["8100:8100"]
+    environment:
+      QUOTE_API_URL: http://quote-api:8000
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      quote-api: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  agent-api:
+    build: .
+    ports: ["8080:8080"]
+    env_file: [.env]
+    environment:
+      MCP_URL: http://mcp-tools:8100/mcp
+      QUOTE_API_URL: http://quote-api:8000
+      REDIS_URL: redis://redis:6379/0
+      CHECKPOINT_DB: /app/data/runtime/checkpoints.sqlite
+    volumes:
+      - agent-data:/app/data/runtime
+    depends_on:
+      mcp-tools: {condition: service_started}
+
+volumes:
+  agent-data:

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Segredos: NUNCA versionar
+.env
+.env.*
+!.env.example
+
+# Dados gerados (Silver é regenerável; Gold é versionada por ser pequena e mascarada)
+data/silver/
+data/runtime/
+*.sqlite
+*.sqlite-*
+
+# Export bruto das IAs antes de sanitizar (ver scripts/sanitize_ai_logs.py)
+ai-logs/raw/
+
+# Claude Code
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/

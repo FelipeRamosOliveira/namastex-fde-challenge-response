@@ -1,0 +1,3 @@
+[submodule "vendor/challenge"]
+	path = vendor/challenge
+	url = https://github.com/namastexlabs/namastex-fde-challenge.git
