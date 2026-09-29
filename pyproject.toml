@@ -1,6 +1,6 @@
 [project]
 name = "autoseguro-agent"
-version = "0.3.0"
+version = "1.0.0"
 description = "Agente de cotação de seguro auto (desafio FDE Namastex): LangGraph + FastMCP, assíncrono, com guardrails de PII."
 readme = "README.md"
 requires-python = ">=3.14"

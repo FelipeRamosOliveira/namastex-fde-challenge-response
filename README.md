@@ -1,4 +1,4 @@
-# AutoSeguro Agent
+# AutoSeguro Agent (namastex-fde-challenge-response)
 
 Agente de WhatsApp da seguradora fictícia AutoSeguro (desafio FDE da Namastex). Ele conversa com o lead, coleta os dados, cota na API do desafio e decide quando passar a conversa para um vendedor humano. Quando a API de cotação falha, ele não trava e não inventa preço.
 
@@ -39,7 +39,7 @@ Pré-requisitos: `git` e Docker com Compose v2.
 
 ```bash
 # 1. clonar (o submódulo traz a quote-api original)
-git clone --recurse-submodules <url-do-repo> autoseguro-agent && cd autoseguro-agent
+git clone --recurse-submodules https://github.com/FelipeRamosOliveira/namastex-fde-challenge-response.git autoseguro-agent && cd autoseguro-agent
 
 # 2. .env com os segredos obrigatórios (CHANNEL_API_KEY, TRACE_API_KEY, VAULT_KEY)
 cp .env.example .env && python3 -c "import base64,os,re,secrets as S;p='.env';s=open(p).read();[s:=re.sub(rf'^{k}=.*$',f'{k}={v}',s,flags=re.M) for k,v in {'CHANNEL_API_KEY':S.token_urlsafe(24),'TRACE_API_KEY':S.token_urlsafe(24),'VAULT_KEY':base64.urlsafe_b64encode(os.urandom(32)).decode()}.items()];open(p,'w').write(s)"
