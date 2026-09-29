@@ -16,6 +16,7 @@ dependencies = [
   "redis>=5.2",
   "pandas>=2.2",
   "pyarrow>=21",
+  "cryptography>=44",
 ]
 
 [project.optional-dependencies]
@@ -59,4 +60,4 @@ ignore = ["S101", "B008"]  # B008: Depends() é o idioma do FastAPI
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B", "ASYNC"]
-"scripts/**" = ["S"]
+"scripts/**" = ["S", "E501"]

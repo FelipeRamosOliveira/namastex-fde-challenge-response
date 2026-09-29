@@ -52,3 +52,10 @@ Felipe subiu o `docker compose` no Windows; a IA testou pelo navegador do app Cl
 - Reteste ao vivo (modo dev): correções confirmadas; a /quote falhou 2 vezes (5xx) e o cliente acertou na 3a tentativa, ao vivo. Achado novo: "isso, pode cotar" não confirmou porque o aceite da regra era descartado quando o LLM não marcava. Corrigido: intenções = LLM + regras.
 - Felipe decidiu manter o LangGraph como orquestrador por curiosidade técnica; a IA propôs usar recursos dele na etapa 5 e prototipou antes de codar: `interrupt()` + `aupdate_state(as_node=...)` + `Command(resume=...)` se comportaram como esperado (mensagem do lead durante a pausa não acorda o grafo; retomada não repete o registro do handoff).
 - Etapa 5 (ADR 0008): cotação em segundo plano retomando o checkpoint, outbox, humano no circuito, lock no Redis, histórico de checkpoints. Um teste mostrou uma corrida (trace já em handoff antes da entrega no outbox); o teste passou a esperar a entrega.
+
+## Sessão 1, continuação (29/09/2026): etapas 6, 7 e 8
+- Omni: a documentação pública não trazia o contrato do provider webhook. A IA clonou o repositório do Omni e leu `webhook-provider.ts`, `types.ts`, `agent-dispatcher.ts` e as rotas do Harness para implementar exatamente o payload, a resposta e o envio ativo. Subir o Omni real no compose foi descartado (Helm, Postgres, NATS e MinIO; sem Docker Hub no ambiente): ficou documentado em `docs/omni.md`, com testes contra um Omni falso fiel ao contrato.
+- Simulador: `LeadRoteiro` (reprodutível, base da avaliação) e `LeadFastAgent` (fast-agent + Groq, conversa livre; depende de rede).
+- Rastreio: log JSON por linha dos eventos, exportador da execução completa, CEP cifrado com Fernet no checkpoint (`VAULT_KEY`).
+- Achado pelo scanner no exportador: ids hexadecimais (`msg_2b2c99598446`) davam falso positivo de CEP e telefone, e a seção "como o lead viu" levava texto bruto. Ids internos passaram a ser ignorados pelo scanner (com teste) e a seção passou a ser mascarada.
+- Avaliação na Gold (300 conversas) e estresse (50% de falha): resultados em `docs/avaliacao.md`.

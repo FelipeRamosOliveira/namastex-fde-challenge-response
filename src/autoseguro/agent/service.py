@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
+import logging
 import time
 import uuid
 from collections import OrderedDict
@@ -36,14 +38,17 @@ from autoseguro.agent.graph import EVENTO_RETENTAR, build_graph
 from autoseguro.agent.llm_extract import LLMExtractor
 from autoseguro.agent.outbox import Outbox
 from autoseguro.agent.redator import Redator
+from autoseguro.channels.omni import OmniDelivery
 from autoseguro.config import Settings
-from autoseguro.guardrails.pii import PiiVault, mask
+from autoseguro.guardrails.pii import PiiVault, configurar_chave_vault, mask
 from autoseguro.llm.client import LLMClient, providers_from_settings
 from autoseguro.tools.handoff import HandoffQueue
 from autoseguro.tools.mcp_server import Services, build_server
 from autoseguro.tools.store import KVStore, make_store
 
 MAX_DEDUP = 5000
+log = logging.getLogger("autoseguro")
+trace_log = logging.getLogger("autoseguro.trace")
 PENDENTES_KEY = "retry:pendentes"
 NO_PAUSADO = ("aguardar_humano",)
 
@@ -81,6 +86,9 @@ class AutoSeguroAgent:
 
     # ------------------------------------------------------------------ ciclo de vida
     async def __aenter__(self) -> AutoSeguroAgent:
+        configurar_chave_vault(self.s.vault_key.get_secret_value() if self.s.vault_key else None)
+        if not self.s.vault_key:
+            log.warning("VAULT_KEY não definida: CEP fica sem cifra no checkpoint (só desenvolvimento)")
         if self.s.mcp_url:
             target = self.s.mcp_url
             self.store = make_store(self.s.redis_url)
@@ -88,7 +96,10 @@ class AutoSeguroAgent:
             self.services = self._services or Services.from_settings(self.s)
             target = build_server(self.services)
             self.store = self.services.store
-        self.outbox = self._outbox or Outbox(self.store, self.s.outbound_webhook_url)
+        self.omni = None
+        if self.s.omni_url and self.s.omni_api_key:
+            self.omni = OmniDelivery(self.s.omni_url, self.s.omni_api_key.get_secret_value(), self.store)
+        self.outbox = self._outbox or Outbox(self.store, self.s.outbound_webhook_url, omni=self.omni)
         self.handoffs = HandoffQueue(self.store)
         gateway = await self._stack.enter_async_context(ToolGateway(target))
         Path(self.s.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +156,7 @@ class AutoSeguroAgent:
             vault = PiiVault.from_dict((snap.values or {}).get("vault") if snap else None)
             masked = mask(text, vault)
 
+            antes = len((snap.values or {}).get("events", [])) if snap else 0
             if snap and snap.next == NO_PAUSADO:
                 st = await self._mensagem_durante_handoff(ref, cfg, message_id, masked, vault, message_type)
             else:
@@ -161,11 +173,18 @@ class AutoSeguroAgent:
                     cfg,
                 )
                 await self._talvez_agendar(ref, conversation_id, st)
+            self._log_eventos(st, antes)
             out = self._resposta(conversation_id, ref, message_id, st)
             self._dedup[(ref, message_id)] = out
             while len(self._dedup) > MAX_DEDUP:
                 self._dedup.popitem(last=False)
             return out
+
+    @staticmethod
+    def _log_eventos(st: dict[str, Any], antes: int) -> None:
+        """Log estruturado (JSON por linha) dos eventos novos do turno: já mascarados."""
+        for e in (st.get("events") or [])[antes:]:
+            trace_log.info(json.dumps(e, ensure_ascii=False, default=str))
 
     @staticmethod
     def _resposta(conversation_id: str, ref: str, message_id: str, st: dict[str, Any]) -> dict[str, Any]:
@@ -249,6 +268,7 @@ class AutoSeguroAgent:
             snap = await self.graph.aget_state(cfg)
             if not snap or (snap.values or {}).get("stage") != "aguardando_cotacao":
                 return  # a conversa seguiu (ex.: lead pediu humano)
+            antes = len((snap.values or {}).get("events", []))
             st = await self.graph.ainvoke(
                 {
                     "conversation_id": ref,
@@ -260,6 +280,7 @@ class AutoSeguroAgent:
                 },
                 cfg,
             )
+            self._log_eventos(st, antes)
             if st.get("reply"):
                 await self.outbox.push(ref, conversation_id, st["reply"], "agente")
             await self._talvez_agendar(ref, conversation_id, st)

@@ -28,6 +28,34 @@ class PiiKind(StrEnum):
 
 RETER_ORIGINAL = {PiiKind.CEP}  # únicos originais guardados no vault
 
+# Criptografia do original retido (Fernet). Configurada na subida via VAULT_KEY.
+_cipher = None
+
+
+def configurar_chave_vault(chave: str | None) -> None:
+    global _cipher
+    if chave:
+        from cryptography.fernet import Fernet
+
+        _cipher = Fernet(chave.encode())
+    else:
+        _cipher = None
+
+
+def _cifrar(valor: str) -> str:
+    return "enc:" + _cipher.encrypt(valor.encode()).decode() if _cipher else valor
+
+
+def _abrir(valor: str) -> str | None:
+    if valor.startswith("h:"):
+        return None
+    if valor.startswith("enc:"):
+        if _cipher is None:
+            return None  # sem a chave, o original é ilegível
+        return _cipher.decrypt(valor[4:].encode()).decode()
+    return valor
+
+
 _SEP = r"[\s.-]?"
 # Ordem importa: padrões mais específicos primeiro, para um número não ser capturado duas vezes.
 _PATTERNS: list[tuple[PiiKind, re.Pattern[str]]] = [
@@ -62,6 +90,8 @@ _NOME_DECL = re.compile(
 )
 _NAO_NOME = {"de", "da", "do", "e", "cliente", "interessado", "interessada", "dono", "dona", "seu", "sua"}
 _TOKEN_RE = re.compile(r"\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME)_\d+\]")
+# Ids gerados pelo próprio sistema (hex): não são PII, mas têm sequências de dígitos
+_ID_INTERNO = re.compile(r"\b(?:evt|msg|qr|q|ho|out|sys|conv|omni|sim)_[0-9a-f]{6,}\b")
 
 
 def cpf_valido(cpf: str) -> bool:
@@ -106,13 +136,14 @@ class PiiVault:
     tokens: dict[str, str] = field(default_factory=dict)
 
     def _stored(self, kind: PiiKind, value: str) -> str:
-        return value if kind in RETER_ORIGINAL else _h(_normalize(kind, value))
+        return _cifrar(value) if kind in RETER_ORIGINAL else _h(_normalize(kind, value))
 
     def token_for(self, kind: PiiKind, value: str) -> str:
         alvo = _h(_normalize(kind, value))
         for tok, val in self.tokens.items():
             if tok.startswith(f"[{kind}_"):
-                cmp = val if val.startswith("h:") else _h(_normalize(kind, val))
+                aberto = _abrir(val)
+                cmp = val if val.startswith("h:") else (_h(_normalize(kind, aberto)) if aberto else None)
                 if cmp == alvo:
                     return tok
         n = sum(1 for t in self.tokens if t.startswith(f"[{kind}_")) + 1
@@ -122,10 +153,11 @@ class PiiVault:
 
     def reveal(self, token: str) -> str | None:
         v = self.tokens.get(token)
-        return None if v is None or v.startswith("h:") else v
+        return None if v is None else _abrir(v)
 
     def latest(self, kind: PiiKind) -> str | None:
-        vals = [v for t, v in self.tokens.items() if t.startswith(f"[{kind}_") and not v.startswith("h:")]
+        vals = [_abrir(v) for t, v in self.tokens.items() if t.startswith(f"[{kind}_")]
+        vals = [v for v in vals if v]
         return vals[-1] if vals else None
 
     def name_hashes(self) -> dict[str, str]:
@@ -153,6 +185,8 @@ def scan(text: str, names: list[str] | None = None, vault: PiiVault | None = Non
         found.append(Entity(kind, text[a:b], a, b))
 
     for m in _TOKEN_RE.finditer(text):  # tokens já mascarados não são tocados
+        taken.append((m.start(), m.end()))
+    for m in _ID_INTERNO.finditer(text):
         taken.append((m.start(), m.end()))
     for m in _NUM_LONGO.finditer(text):  # CPF válido sem pontuação vence o padrão de celular
         if len(m.group(0)) == 11 and cpf_valido(m.group(0)):

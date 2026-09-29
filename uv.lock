@@ -218,6 +218,7 @@ name = "autoseguro-agent"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -246,6 +247,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=44" },
     { name = "fast-agent-mcp", marker = "extra == 'sim'", specifier = ">=0.10" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "fastmcp", specifier = ">=4.0" },

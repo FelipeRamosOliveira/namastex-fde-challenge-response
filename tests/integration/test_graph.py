@@ -292,3 +292,19 @@ async def test_lista_de_planos_aparece_uma_vez(stable_quote_url, tmp_path):
         r3 = await ag.handle("c18", "cep 01310-100")
     assert "Temos 3 planos" in r1["reply"]
     assert "Temos 3 planos" not in r3["reply"] and "Essencial, Completo ou Premium" in r3["reply"]
+
+
+async def test_cep_cifrado_no_checkpoint_com_vault_key(stable_quote_url, tmp_path):
+    from cryptography.fernet import Fernet
+
+    from autoseguro.guardrails.pii import configurar_chave_vault
+
+    s = cfg(stable_quote_url, tmp_path, vault_key=Fernet.generate_key().decode())
+    try:
+        async with AutoSeguroAgent(s) as ag:
+            outs = await conversa(ag, "c19", [*FELIZ, "sim"])
+        assert outs[-1]["stage"] == "cotado"  # o CEP foi decifrado para cotar
+        blob = (tmp_path / "ck.sqlite").read_bytes()
+        assert b"01310-100" not in blob and b"01310100" not in blob
+    finally:
+        configurar_chave_vault(None)

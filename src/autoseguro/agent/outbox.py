@@ -19,9 +19,13 @@ from autoseguro.tools.store import KVStore
 
 class Outbox:
     def __init__(
-        self, store: KVStore, webhook_url: str | None = None, http: httpx.AsyncClient | None = None
+        self,
+        store: KVStore,
+        webhook_url: str | None = None,
+        http: httpx.AsyncClient | None = None,
+        omni: Any = None,
     ) -> None:
-        self.store, self.webhook_url = store, webhook_url
+        self.store, self.webhook_url, self.omni = store, webhook_url, omni
         self.http = http or httpx.AsyncClient(timeout=5)
 
     async def push(
@@ -34,7 +38,14 @@ class Outbox:
             "origem": origem,  # agente | humano
             "criado_em": datetime.now().isoformat(timespec="seconds"),
             "entregue_webhook": False,
+            "entregue_omni": False,
         }
+        if self.omni is not None:  # conversa que veio do Omni volta pelo Omni
+            try:
+                res = await self.omni.enviar(conversation_ref, texto)
+                item["entregue_omni"] = bool(res) and res["status"] < 300
+            except httpx.HTTPError:
+                pass
         if self.webhook_url:
             try:
                 r = await self.http.post(self.webhook_url, json=item)

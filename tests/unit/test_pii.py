@@ -94,3 +94,8 @@ def test_mask_nomes_conhecidos():
 def test_mask_dict_recursivo_preserva_ids():
     out = mask_dict({"a": ["email x.y@z.com"], "n": 3, "conversation_id": "5521972242584"})
     assert out == {"a": ["email [EMAIL_1]"], "n": 3, "conversation_id": "5521972242584"}
+
+
+def test_ids_internos_nao_sao_pii_mas_pii_ao_lado_e():
+    assert scan('{"message_id": "msg_2b2c99598446", "event_id": "evt_9081989502b1"}') == []
+    assert [e.kind for e in scan("msg_2b2c99598446 cpf 389.083.863-43")] == [PiiKind.CPF]

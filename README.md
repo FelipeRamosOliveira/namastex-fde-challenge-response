@@ -2,14 +2,26 @@
 
 Agente de WhatsApp da seguradora fictícia AutoSeguro (desafio FDE da Namastex): conversa com o lead, qualifica, cota na API do desafio e decide quando passar para um vendedor humano. Não trava e não inventa preço quando a API falha.
 
-> Status: etapas 0 a 5 prontas (fundação, dados, ferramentas MCP resilientes, grafo LangGraph, LLM Groq com guardrails, cotação em segundo plano e humano no circuito). Plano completo em `docs/PLANO.md`.
+> Status: etapas 0 a 8 prontas. Plano em `docs/PLANO.md`.
+
+## Resultado em uma tabela
+Avaliação com 300 conversas da Gold contra a quote-api original, instabilidade padrão (detalhes em `docs/avaliacao.md`):
+
+| Critério do desafio | Resultado |
+|---|---|
+| Funciona de ponta a ponta | 210/210 leads elegíveis chegaram à cotação; preço igual ao da API em 284/284 |
+| O que faz quando a /quote falha | Timeout curto + hedging + retry + circuit breaker; se ainda falhar, avisa o lead e tenta de novo em segundo plano. Com 50% de falha: 72/72 cotados, 29 em segundo plano, 0 preço inventado |
+| Critério de handoff explícito | 8 motivos em código (tabela abaixo); 258/258 coerentes com o caso |
+| Rastreio | Evento com id e status para cada mensagem, cotação e tentativa; checkpoints do LangGraph; log de execução completa em `docs/execucao/` |
+| Dados sensíveis | Máscara antes de LLM, log, trace e fila; 0 PII em 26.470 mensagens da Silver e nas respostas; CEP cifrado no checkpoint |
+| Uso de IA | `docs/DEVLOG.md` (o que a IA propôs e o que foi aceito ou rejeitado) e `ai-logs/` |
 
 ## Regras de ouro
 | Regra | Como é garantida | Prova |
 |---|---|---|
 | PII protegida | Máscara na entrada (`guardrails/pii.py`) antes de qualquer LLM, log, trace ou fila; checagem na saída | Teste independente: 0 valores da Bronze na Silver e na Gold; trace e fila sem CPF, e-mail ou telefone |
 | Valores reais | Preço, franquia, carência e pro-rata saem da resposta da `/quote` por template; guardrail bloqueia R$ que não veio da API | Testes comparam a resposta do agente com a chamada direta à API original |
-| Omni | Canal via provider webhook do Omni e canal Harness (etapa 6) | Em andamento |
+| Omni | O agente é um provider `webhook` do Omni; mensagens ativas voltam por `/api/v2/messages/send` (`docs/omni.md`) | Testes com um Omni falso que segue o contrato do código-fonte do Omni |
 
 ## Como rodar
 
@@ -101,6 +113,18 @@ Fachada: lock por conversa, máscara antes do grafo, id opaco, idempotência por
 | `POST /v1/conversations/{id}/operador` | Vendedor: `responder`, `devolver`, `encerrar` | idem |
 | `GET /v1/conversations/{id}/trace` | Rastreio mascarado | idem |
 | `GET /v1/conversations/{id}/historico` | Checkpoints do LangGraph (viagem no tempo) | idem |
+| `POST /omni/webhook` | Omni (provider webhook) | `Authorization: Bearer` (`OMNI_PROVIDER_KEY`) |
+
+## Log de execução completa
+`docs/execucao/feliz.md` (conversa do início ao fim até fechar) e `docs/execucao/resiliencia.md` (a /quote cai depois da confirmação; o lead é avisado e recebe a cotação em segundo plano quando ela volta). Os `.jsonl` ao lado têm os eventos crus. Regerar: `uv run python scripts/exportar_execucao.py`.
+
+Em produção, cada evento também sai no log do container como JSON por linha (`docker compose logs agent-api`).
+
+## Simulador e avaliação
+```bash
+uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 300          # leads por roteiro
+uv run --extra sim python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 5 --lead fastagent  # leads com LLM (fast-agent + Groq)
+```
 
 ## Rastreio
 Cada turno gera eventos com `event_id`, `conversation_id` (opaco: hash do id do canal) e `message_id`: `message_in` (com os tipos de PII detectados), `extracao`, `pre_validacao`, `cotacao` (com `quote_request_id`, `quote_id`, tentativas, status HTTP, latência, hedge e cache), `handoff` e `message_out`.

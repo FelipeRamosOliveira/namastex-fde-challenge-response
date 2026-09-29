@@ -1,0 +1,25 @@
+{
+ "cenario": "QUOTE_FAILURE_RATE=0.5 QUOTE_SLOW_RATE=0.2",
+ "metricas": {
+  "conversas": 100,
+  "elegiveis": 72,
+  "ponta_a_ponta": "72/72",
+  "taxa_ponta_a_ponta": 1.0,
+  "acerto_preco": "96/96",
+  "taxa_acerto_preco": 1.0,
+  "handoffs": {
+   "pronto_para_fechar": 21,
+   "objecao_preco": 38,
+   "recusa_regra": 28
+  },
+  "handoff_coerente": "87/87",
+  "cotacao_em_segundo_plano": 29,
+  "vazamento_pii_respostas": 0,
+  "latencia_turno_ms": {
+   "p50": 52.1,
+   "p95": 1230.8,
+   "max": 5167.5,
+   "media": 246.2
+  }
+ }
+}

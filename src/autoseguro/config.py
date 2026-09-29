@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     mcp_url: str | None = None  # sem URL: ferramentas MCP em processo
     trace_api_key: SecretStr | None = None  # protege GET /v1/conversations/{id}/trace
     channel_api_key: SecretStr | None = None  # se definida, exigida em POST /v1/messages
+    vault_key: SecretStr | None = None  # chave Fernet: cifra o CEP guardado no checkpoint
 
     # --- Conversa ---
     max_turnos_sem_progresso: int = 6
@@ -43,6 +44,11 @@ class Settings(BaseSettings):
     retry_fundo_delays_s: list[float] = [5.0, 20.0, 60.0]
     # Entrega ativa ao canal (Omni ou outro); sem URL, o canal busca em GET .../outbox
     outbound_webhook_url: str | None = None
+
+    # --- Omni (canal) ---
+    omni_url: str | None = None  # ex.: http://omni-api:8882 (para mensagens ativas)
+    omni_api_key: SecretStr | None = None  # chave da API do Omni (x-api-key)
+    omni_provider_key: SecretStr | None = None  # Bearer que o Omni manda no webhook do provider
 
 
 @lru_cache

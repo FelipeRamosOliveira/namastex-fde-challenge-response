@@ -8,6 +8,7 @@ Rodar: uv run uvicorn autoseguro.api.app:app --port 8080
 from __future__ import annotations
 
 import hmac
+import logging
 from contextlib import asynccontextmanager
 from typing import Literal
 
@@ -15,7 +16,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from autoseguro.agent.service import AutoSeguroAgent
+from autoseguro.channels.omni import OmniWebhookPayload
 from autoseguro.config import get_settings
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 @asynccontextmanager
@@ -64,6 +68,26 @@ async def health():
 @app.post("/v1/messages", dependencies=[Depends(exige_chave_canal)])
 async def receber(m: MensagemIn, ag: AutoSeguroAgent = Depends(agent)):
     return await ag.handle(m.conversation_id, m.text, m.message_type, m.message_id)
+
+
+def exige_bearer_omni(authorization: str | None = Header(default=None)) -> None:
+    """O Omni manda `Authorization: Bearer <apiKey do provider>`.
+    Sem OMNI_PROVIDER_KEY definida, o webhook fica fechado."""
+    chave = get_settings().omni_provider_key
+    recebida = (authorization or "").removeprefix("Bearer ").strip() or None
+    if not _confere(chave, recebida):
+        raise HTTPException(401, "provider do Omni não autorizado")
+
+
+@app.post("/omni/webhook", dependencies=[Depends(exige_bearer_omni)])
+async def omni_webhook(p: OmniWebhookPayload, ag: AutoSeguroAgent = Depends(agent)):
+    """Provider `webhook` do Omni, modo round-trip: responde {"reply": ...} na hora.
+    Mensagens depois (cotação em segundo plano, vendedor) saem por POST /api/v2/messages/send do Omni."""
+    texto, tipo = p.texto_e_tipo()
+    out = await ag.handle(p.conversation_id(), texto, tipo, message_id=f"omni_{p.event.id}")
+    if ag.omni is not None:
+        await ag.omni.lembrar_rota(out["conversation_ref"], p)
+    return {"reply": out["reply"]} if out["reply"] else {"parts": []}
 
 
 @app.get("/v1/conversations/{conversation_id}/outbox", dependencies=[Depends(exige_chave_canal)])
