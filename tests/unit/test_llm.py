@@ -142,3 +142,14 @@ async def test_aceite_da_regra_nao_se_perde():
     fake = FakeLLM(extrair=lambda t: {"intents": []})
     ex = await LLMExtractor(cliente(fake)).extract("isso, pode cotar", "confirmacao", HOJE)
     assert "aceite" in ex.intents
+
+
+def test_status_do_llm_ligado_e_desligado():
+    from autoseguro.agent.service import AutoSeguroAgent
+    from autoseguro.llm.client import LLMClient, Provider
+    from autoseguro.tools.store import MemoryStore
+
+    ligado = AutoSeguroAgent._status_llm(LLMClient([Provider("groq", "u", "k", "m")], MemoryStore()))
+    assert ligado == {"ativo": True, "provedores": ["groq"], "aviso": None}
+    desligado = AutoSeguroAgent._status_llm(None)
+    assert desligado["ativo"] is False and "GROQ_API_KEY ausente" in desligado["aviso"]

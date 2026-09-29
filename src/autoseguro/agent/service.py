@@ -136,6 +136,9 @@ class AutoSeguroAgent:
             extractor = extractor or LLMExtractor(llm)
             redator = Redator(llm) if self.s.usar_redator else None
         self.llm = llm
+        self.llm_status = self._status_llm(llm)
+        if self.llm_status["aviso"]:
+            log.warning(self.llm_status["aviso"])
         self.graph = build_graph(gateway, extractor, saver, redator=redator, **kw)
         try:  # aquece: conexão MCP e cache do /planos antes do primeiro lead
             await gateway.consultar_planos()
@@ -151,6 +154,23 @@ class AutoSeguroAgent:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await t
         await self._stack.aclose()
+
+    @staticmethod
+    def _status_llm(llm: LLMClient | None) -> dict[str, Any]:
+        """Diz se o LLM está ligado. Sem chave o agente funciona (só regras), mas avisa: no log ao
+        subir e no /health, para quem avalia não achar que o LLM está em uso."""
+        provedores = [p.name for p in llm.providers] if llm is not None else []
+        if provedores:
+            return {"ativo": True, "provedores": provedores, "aviso": None}
+        return {
+            "ativo": False,
+            "provedores": [],
+            "aviso": (
+                "GROQ_API_KEY ausente: o agente roda só com regras (sem LLM para entender texto livre "
+                "nem frase-ponte). Gere uma chave gratuita em https://console.groq.com/keys "
+                "e coloque no .env."
+            ),
+        }
 
     def _build_llm(self) -> LLMClient | None:
         providers = providers_from_settings(self.s)

@@ -76,3 +76,9 @@ Um agente revisor separado, sem ter visto o código ser escrito, leu os commits 
 9. Reação (só emoji) e eventos que não são `message.received` do Omni viravam "mídia" e, na segunda, handoff. Agora são ignorados.
 
 Pontos que o revisor verificou e estavam certos: sem deadlock no lock por conversa, interrupt/resume corretos, fila, trace, histórico e logs mascarados, `/omni/webhook` fechado sem chave, mensagens ativas passando pelo guardrail de R$.
+
+## Sessão 1, continuação (29/09/2026): documentação e V1
+- README reorganizado em ficha técnica, guia rápido (um comando por bloco), arquitetura com 5 figuras (`docs/figuras/`), operação e referência.
+- Conversa exportada para `ai-logs/sessions/` com `scripts/exportar_conversa.py` (só o que aparece na tela) e sanitizador reforçado (headers, Bearer, chaves Fernet, `--valores-de .env`). Histórico do git varrido: nenhuma chave em nenhuma revisão.
+- V1 publicada em `FelipeRamosOliveira/namastex-fde-challenge-response`.
+- Pedido de Felipe: avisar quando a chave do LLM falta. O agente agora registra um aviso ao subir e `GET /health` mostra `"llm": {"ativo": ..., "provedores": [...], "aviso": ...}`; o README explica onde gerar a chave do Groq e que o avaliador recebe uma chave de 30 dias junto com o link.

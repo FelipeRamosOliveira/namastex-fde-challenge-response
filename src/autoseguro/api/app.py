@@ -72,8 +72,9 @@ def exige_chave_canal(x_channel_key: str | None = Header(default=None)) -> None:
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health(ag: AutoSeguroAgent = Depends(agent)):
+    """Saúde da API e estado do LLM (sem chave, o agente responde só com regras e avisa aqui)."""
+    return {"status": "ok", "llm": ag.llm_status}
 
 
 def _nao_omni(conversation_id: str) -> None:

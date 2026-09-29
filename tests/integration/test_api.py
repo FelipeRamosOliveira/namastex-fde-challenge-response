@@ -15,6 +15,8 @@ def client(stable_quote_url, tmp_path, monkeypatch):
     monkeypatch.setenv("TRACE_API_KEY", "trace-secreta")
     monkeypatch.setenv("CHANNEL_API_KEY", "canal-secreto")
     monkeypatch.delenv("MCP_URL", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)  # não lê o .env do repo
     get_settings.cache_clear()
     from autoseguro.api.app import app
@@ -52,3 +54,10 @@ def test_limites_de_entrada(client):
     assert client.post("/v1/messages", json=grande, headers=CANAL).status_code == 422
     mid = {"conversation_id": "a3", "text": "oi", "message_id": "m" * 101}
     assert client.post("/v1/messages", json=mid, headers=CANAL).status_code == 422
+
+
+def test_health_avisa_llm_ausente(client):
+    r = client.get("/health").json()
+    assert r["status"] == "ok"
+    assert r["llm"]["ativo"] is False and "GROQ_API_KEY ausente" in r["llm"]["aviso"]
+    assert "console.groq.com" in r["llm"]["aviso"]

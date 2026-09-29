@@ -62,7 +62,11 @@ set -a; . ./.env; set +a
 curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
 ```
 
-Pronto. Opcional: `GROQ_API_KEY` no `.env` liga o LLM (sem ela, o agente usa só regras). Conversa completa até a cotação, variáveis, modo dev, testes e problemas comuns estão em [4. Operação](#4-operação).
+**6. (Opcional) Ligar o LLM:** coloque a chave em `GROQ_API_KEY=` no `.env` e rode `docker compose up -d` de novo. A chave é gratuita e pode ser gerada em https://console.groq.com/keys. Sem ela o agente funciona só com regras, avisa no log ao subir e mostra `"llm": {"ativo": false, ...}` em `GET /health`.
+
+> **Para o avaliador:** junto com o link desta resposta foi enviada uma chave do Groq com validade de 30 dias. Basta colá-la em `GROQ_API_KEY=` no passo 6.
+
+Conversa completa até a cotação, variáveis, modo dev, testes e problemas comuns estão em [4. Operação](#4-operação).
 
 ---
 
@@ -164,7 +168,7 @@ Variáveis do `.env`:
 | `CHANNEL_API_KEY` | sim | Header `x-channel-key` exigido em `/v1/messages` e no outbox |
 | `VAULT_KEY` | sim | Chave Fernet que cifra o CEP. Rotação: `nova,antiga` |
 | `TRACE_API_KEY` | recomendada | Header `x-api-key` do painel do vendedor e do rastreio |
-| `GROQ_API_KEY` / `OPENROUTER_API_KEY` | não | LLM principal e reserva; sem elas, só regras |
+| `GROQ_API_KEY` / `OPENROUTER_API_KEY` | não | LLM principal e reserva; sem elas, só regras (aviso no log e em `/health`). Chave gratuita do Groq: https://console.groq.com/keys |
 | `OMNI_PROVIDER_KEY`, `OMNI_URL`, `OMNI_API_KEY` | não | Ligar a um Omni real (ver `docs/omni.md`); sem elas, `/omni/webhook` fica fechado |
 
 Sem `CHANNEL_API_KEY` ou `VAULT_KEY`, o `agent-api` não sobe de propósito (`EXIGIR_SEGREDOS=true` no compose).
@@ -200,7 +204,7 @@ uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GR
 | `401 chave do canal inválida` | Falta o header | Enviar `-H "x-channel-key: $CHANNEL_API_KEY"` |
 | `403 conversas do Omni entram só por /omni/webhook` | `conversation_id` começando com `omni:` | Usar outro id; ids `omni:` são reservados ao webhook |
 | `"stage":"aguardando_cotacao"` | A `/quote` falhou (instabilidade do desafio) | Esperado: consultar `GET /v1/conversations/<id>/outbox` depois de alguns segundos |
-| Resposta sem frase natural | LLM desligado ou sem rede | Esperado sem `GROQ_API_KEY`; o fluxo não depende dele |
+| Resposta sem frase natural | LLM desligado ou sem rede | `curl -s localhost:8080/health`: se `"llm"` vier com `"ativo": false`, falta `GROQ_API_KEY` no `.env` (depois, `docker compose up -d`) |
 
 ### 4.6 Regras para quem for mexer no código (pessoa ou IA)
 - Nunca mostrar valor em R$ que não venha da `/quote`: use os templates de `agent/templates.py`.
