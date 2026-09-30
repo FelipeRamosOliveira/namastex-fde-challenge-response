@@ -25,8 +25,8 @@ A `/quote` falha 20% das vezes (500, 502, 503) e 10% das vezes demora 8 s. O bri
 
 ## Consequências
 - O pior caso de espera do lead num turno fica em poucos segundos (máximo de 6,2 s medido na avaliação), e a chamada lenta nunca é esperada inteira.
-- Custo: o hedging manda uma segunda chamada quando a primeira passa de 1,2 s, o que aumenta a carga justamente quando a API está lenta. O breaker só abre depois de 3 cotações falhas. Próximo passo em README 5.7.
-- O cache reaproveita o `quote_id` da resposta original para leads com o mesmo perfil no mesmo dia (README 5.7).
+- Custo: o hedging manda uma segunda chamada quando a primeira passa de 1,2 s, o que aumenta a carga justamente quando a API está lenta. Mitigado depois da auditoria (ADR 0009): orçamento de hedge por minuto (10% das cotações, piso de 3) e nenhum hedge enquanto houver cotação falhando. O breaker só abre depois de 3 cotações falhas.
+- O cache reaproveitava o `quote_id` da resposta original para leads com o mesmo perfil no mesmo dia. Corrigido (ADR 0009): cada entrega do cache tem `quote_id` próprio e `source_quote_id` aponta para a resposta original.
 
 ## Complemento
 A resposta imediata ao lead e a nova tentativa em segundo plano estão no ADR 0008.

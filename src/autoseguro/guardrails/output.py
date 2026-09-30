@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from autoseguro.guardrails.pii import scan
 
 _RE_BRL = re.compile(r"R\$\s?\d{1,3}(?:\.\d{3})*(?:,\d{2})?|R\$\s?\d+(?:,\d{2})?")
-_RE_TOKEN = re.compile(r"\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME)_\d+\]")
+_RE_TOKEN = re.compile(r"\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME|CNPJ|RG|CARTAO)_\d+\]")
 
 
 @dataclass

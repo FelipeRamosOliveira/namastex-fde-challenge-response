@@ -135,9 +135,12 @@ async def operador(conversation_id: str, a: AcaoOperador, ag: AutoSeguroAgent = 
 
 
 @app.get("/v1/handoffs", dependencies=[Depends(exige_chave)])
-async def handoffs(ag: AutoSeguroAgent = Depends(agent)):
-    """Fila do vendedor (dados mascarados)."""
-    return await ag.handoffs.listar()
+async def handoffs(
+    status: Literal["pendente", "em_atendimento", "devolvido", "encerrado"] | None = None,
+    ag: AutoSeguroAgent = Depends(agent),
+):
+    """Fila do vendedor (dados mascarados). `?status=pendente` mostra só o que falta atender."""
+    return await ag.handoffs.listar(status)
 
 
 @app.get("/v1/conversations/{conversation_id}/historico", dependencies=[Depends(exige_chave)])

@@ -20,6 +20,7 @@ Estado persistido por conversa (thread_id = conversation_ref) no checkpointer.
 
 from __future__ import annotations
 
+import asyncio
 import operator
 import re
 import uuid
@@ -62,11 +63,13 @@ class AgentState(TypedDict, total=False):
     quote_atual: dict[str, Any] | None
     handoff: dict[str, Any] | None
     handoff_pendente: dict[str, Any] | None
+    handoff_registro: dict[str, Any] | None  # registro na fila que falhou: a fachada tenta de novo
     turnos_sem_progresso: int
     midia_count: int
     objecoes: int
     tentativas_fundo: int  # novas tentativas de cotação em segundo plano já feitas
     agendar_retry: float | None  # segundos até a próxima tentativa (lido pela fachada)
+    retry_em: float | None  # horário (epoch) da próxima tentativa em segundo plano
     stage_antes_handoff: str | None
     transcript: Annotated[list[dict[str, Any]], operator.add]
     events: Annotated[list[dict[str, Any]], operator.add]
@@ -443,6 +446,7 @@ def build_graph(
             quote_request_id=out["quote_request_id"],
             status=out["status"],
             quote_id=out.get("quote_id"),
+            source_quote_id=out.get("source_quote_id"),
             from_cache=out.get("from_cache"),
             latency_ms=out.get("latency_ms"),
             attempts=[
@@ -484,6 +488,8 @@ def build_graph(
                         "awaiting": None,
                         "acao": "responder",
                         "agendar_retry": retry_delays[feitas],
+                        # horário no checkpoint (SQLite): reconstrói a tentativa se o Redis perder
+                        "retry_em": datetime.now().timestamp() + retry_delays[feitas],
                         "reply": T.AGUARDANDO_COTACAO if primeira else "",
                         "events": [
                             ev,
@@ -514,18 +520,29 @@ def build_graph(
             if q
             else None,
         }
-        try:
-            item = await gateway.registrar_handoff(
-                conversation_id=state["conversation_id"],
-                motivo=hp["motivo"],
-                resumo="\n".join(resumo_linhas),
-                dados=dados,
-            )
-        except Exception as e:  # noqa: BLE001 - lead não fica sem resposta; evento alerta a operação
+        # auditoria: se o registro falhava, a conversa pausava esperando um vendedor que não a via.
+        # Agora o id nasce aqui (registro idempotente), há novas tentativas e, se todas falharem,
+        # o registro fica no estado (`handoff_registro`) para a fachada concluir em segundo plano.
+        registro = {
+            "conversation_id": state["conversation_id"],
+            "motivo": hp["motivo"],
+            "resumo": "\n".join(resumo_linhas),
+            "dados": dados,
+            "handoff_id": f"ho_{uuid.uuid4().hex[:12]}",
+        }
+        item, erro = None, None
+        for espera in (0.0, 0.2, 0.6):
+            await asyncio.sleep(espera)
+            try:
+                item = await gateway.registrar_handoff(**registro)
+                break
+            except Exception as e:  # noqa: BLE001 - lead não fica sem resposta; a fachada tenta de novo
+                erro = type(e).__name__
+        if item is None:
             item = {
-                "handoff_id": None,
+                "handoff_id": registro["handoff_id"],
                 "motivo": hp["motivo"],
-                "status": f"falha_registro:{type(e).__name__}",
+                "status": f"falha_registro:{erro}",
             }
         reply = T.recusa(hp.get("detalhe")) if hp["motivo"] == "recusa_regra" else T.HANDOFF[hp["motivo"]]
         return {
@@ -533,6 +550,9 @@ def build_graph(
             "stage_antes_handoff": state.get("stage"),
             "awaiting": None,
             "handoff": item,
+            "handoff_registro": registro
+            if erro and item.get("status", "").startswith("falha_registro")
+            else None,
             "acao": "responder",
             "reply": reply,
             "events": [
@@ -542,6 +562,7 @@ def build_graph(
                     motivo=hp["motivo"],
                     handoff_id=item["handoff_id"],
                     detalhe=hp.get("detalhe"),
+                    registro="pendente" if str(item.get("status", "")).startswith("falha_registro") else "ok",
                 )
             ],
         }

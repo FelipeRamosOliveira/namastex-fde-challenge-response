@@ -81,10 +81,15 @@ def build_server(services: Services) -> FastMCP:
 
     @mcp.tool
     async def registrar_handoff(
-        conversation_id: str, motivo: HandoffMotivo, resumo: str, dados: dict[str, Any] | None = None
+        conversation_id: str,
+        motivo: HandoffMotivo,
+        resumo: str,
+        dados: dict[str, Any] | None = None,
+        handoff_id: Annotated[str | None, Field(max_length=40, description="idempotência")] = None,
     ) -> dict[str, Any]:
-        """Encaminha a conversa para um vendedor humano com um resumo mascarado."""
-        return await services.handoff.registrar(conversation_id, motivo, resumo, dados)
+        """Encaminha a conversa para um vendedor humano com um resumo mascarado.
+        Com `handoff_id`, registrar de novo o mesmo id não duplica o item na fila."""
+        return await services.handoff.registrar(conversation_id, motivo, resumo, dados, handoff_id)
 
     @mcp.tool
     async def status_cotacao() -> dict[str, Any]:

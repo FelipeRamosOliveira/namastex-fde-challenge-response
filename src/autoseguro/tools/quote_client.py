@@ -3,11 +3,15 @@
 Estratégia (ver docs/adr/0003-resiliencia-quote.md):
 - timeout curto por tentativa: a chamada lenta (8 s) é abandonada cedo;
 - hedging: se a tentativa em voo passa de `hedge_after_s`, dispara outra em paralelo
-  e usa a primeira que responder (seguro: /quote só calcula, não grava nada);
+  e usa a primeira que responder (seguro: /quote só calcula, não grava nada). Com orçamento:
+  no máximo `quote_hedge_budget_ratio` das chamadas do minuto (piso `quote_hedge_budget_min`),
+  e nenhum hedge enquanto houver cotação falhando (circuito degradado), para não dobrar a carga
+  justamente quando a API está lenta;
 - retry com backoff exponencial e jitter só para 5xx, timeout e erro de transporte;
 - 422 (recusa de regra) e 400 (payload inválido) não repetem;
 - circuit breaker compartilhado (KVStore) evita martelar a API quando ela está fora;
-- cache da resposta REAL por payload + dia: o valor mostrado continua vindo da API.
+- cache da resposta REAL por payload + dia: o valor mostrado continua vindo da API. Cada entrega
+  do cache ganha um `quote_id` próprio, com `source_quote_id` apontando para a resposta original.
 
 Nunca devolve preço que não tenha vindo de um HTTP 200 da API.
 """
@@ -59,6 +63,7 @@ class QuoteOutcome:
     from_cache: bool = False
     latency_ms: float = 0.0
     obtained_at: str | None = None
+    source_quote_id: str | None = None  # cotação do cache: id da resposta original da API
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -185,6 +190,9 @@ class QuoteClient:
         if cached:
             out = QuoteOutcome(**{**cached, "quote_request_id": req_id, "attempts": [], "from_cache": True})
             out.status = QuoteStatus(cached["status"])
+            if out.quote_id:  # auditoria: leads diferentes recebiam o mesmo quote_id do cache
+                out.source_quote_id = cached.get("source_quote_id") or cached["quote_id"]
+                out.quote_id = f"q_{uuid.uuid4().hex[:12]}"
             out.latency_ms = round((time.perf_counter() - started) * 1000, 1)
             return out
 
@@ -192,12 +200,14 @@ class QuoteClient:
         if modo == "bloqueado":
             return QuoteOutcome(QuoteStatus.CIRCUITO_ABERTO, req_id, motivo="circuit breaker aberto")
         max_attempts = 1 if modo == "sonda" else self.s.quote_max_attempts
+        await self.store.incr(self._janela("chamadas"), ttl_s=120)
 
         attempts: list[Attempt] = []
         inflight: dict[asyncio.Task, tuple[int, float, bool]] = {}
         launched = 0
         next_launch_at = time.perf_counter()  # pode lançar já
         final: QuoteOutcome | None = None
+        sem_hedge = False
 
         def launch(hedge: bool) -> None:
             nonlocal launched
@@ -215,11 +225,14 @@ class QuoteClient:
                 # tempo até o próximo evento: hedge ou fim do backoff
                 if inflight:
                     oldest = min(v[1] for v in inflight.values())
-                    can_hedge = launched < max_attempts and len(inflight) == 1
+                    can_hedge = launched < max_attempts and len(inflight) == 1 and not sem_hedge
                     wait = max(0.0, oldest + self.s.quote_hedge_after_s - now) if can_hedge else None
                     done, _ = await asyncio.wait(inflight, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
                     if not done:
-                        launch(hedge=True)
+                        if await self._pode_hedge():
+                            launch(hedge=True)
+                        else:
+                            sem_hedge = True  # sem orçamento: espera a chamada em voo (ou o timeout)
                         continue
                     for t in done:
                         n, t0, hedge = inflight.pop(t)
@@ -283,6 +296,21 @@ class QuoteClient:
             }
             await self.store.set_json(key, cacheable, ttl_s=_seconds_to_midnight())
         return final
+
+    def _janela(self, nome: str) -> str:
+        return f"hedge:{nome}:{int(time.time() // 60)}"  # janela de um minuto
+
+    async def _pode_hedge(self) -> bool:
+        """Hedge só com orçamento e com o circuito saudável (auditoria: dobrava a carga na lentidão)."""
+        if (await self.store.get_json(self.breaker._fail_key) or 0) > 0:
+            return False  # há cotação falhando: a API já está sofrendo
+        chamadas = await self.store.get_json(self._janela("chamadas")) or 0
+        usados = await self.store.get_json(self._janela("usados")) or 0
+        limite = max(self.s.quote_hedge_budget_min, int(chamadas * self.s.quote_hedge_budget_ratio))
+        if usados >= limite:
+            return False
+        await self.store.incr(self._janela("usados"), ttl_s=120)
+        return True
 
     async def health(self) -> bool:
         try:
