@@ -1,10 +1,22 @@
 # Avaliação (etapa 8)
 
-Leads simulados a partir da Gold (conversas reais do dataset, mascaradas) conversando com o agente em processo, contra a **quote-api original** do desafio. O lead é o `LeadRoteiro` (determinístico): responde o que o bot pergunta e segue o desfecho original da conversa (ganho fecha, perdido e em negociação objetam, sem resposta some). O preço esperado vem da resposta da API gravada na Gold.
+Leads simulados a partir da Gold (conversas reais do dataset, mascaradas) conversando com o agente no ar (`agent-api` do Docker), pela mesma API que o canal usa, contra a **quote-api original** do desafio. O lead é o `LeadRoteiro` (determinístico): responde o que o bot pergunta e segue o desfecho original da conversa (ganho fecha, perdido e em negociação objetam, sem resposta some). O preço esperado vem da resposta da API gravada na Gold.
 
-Reproduzir (quote-api no ar):
+### Reproduzir
+Pré-requisitos: os 4 containers no ar (guia rápido do README) e as chaves carregadas no terminal (`set -a; . ./.env; set +a`), porque o avaliador envia `CHANNEL_API_KEY` no header. O `--url` é obrigatório. Use `--saida` para não sobrescrever os resultados versionados.
+
 ```bash
-uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 300
+# 1. Instabilidade padrão (20% falha, 10% lenta), 300 conversas
+uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 300 --saida /tmp/avaliacao.json
+
+# 2. Estresse (50% falha, 20% lenta), 100 conversas: sobe a quote-api com outra taxa e roda
+QUOTE_FAILURE_RATE=0.5 QUOTE_SLOW_RATE=0.2 docker compose up -d quote-api
+uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 100 --saida /tmp/avaliacao-estresse.json
+docker compose up -d quote-api   # volta à instabilidade padrão
+
+# 3. Com LLM nos dois lados: precisa do extra do simulador e de GROQ_API_KEY
+uv sync --extra sim
+uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 20 --aleatorio 7 --lead fastagent --concorrencia 1 --pausa 20 --saida /tmp/avaliacao-groq.json
 ```
 
 ## Resultado: instabilidade padrão do desafio (20% falha, 10% lenta)
@@ -38,10 +50,9 @@ uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 300
 Com metade das chamadas falhando, nenhuma conversa foi para o humano por causa da API: as falhas foram absorvidas pelo retry rápido (hedging) e, quando não bastou, pela nova tentativa em segundo plano.
 
 ## Resultado: com LLM (Groq) nos dois lados
-20 casos aleatórios da Gold (`--aleatorio 7`), lead interpretado por LLM (fast-agent + Groq, conversa livre) e agente com Groq ligado, uma conversa por vez, 20 s entre mensagens (tempo de uma pessoa digitar). `docs/avaliacao-groq.json`.
-```bash
-uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 20 --aleatorio 7 --lead fastagent --concorrencia 1 --pausa 20 --saida docs/avaliacao-groq.json
-```
+20 casos aleatórios da Gold (`--aleatorio 7`), lead interpretado por LLM (fast-agent + Groq, conversa livre) e agente com Groq ligado, uma conversa por vez, 20 s entre mensagens (tempo de uma pessoa digitar). 17 dos 20 casos foram concluídos: os outros 3 caíram porque a cota diária do Groq acabou no meio da rodada. `docs/avaliacao-groq.json` (comando no item 3 de "Reproduzir").
+
+As linhas "Guardrail de saída acionado", "Extrações que dispensaram o LLM" e "Frases do redator aproveitadas" não estão no JSON, que guarda só as métricas do simulador; a contagem está descrita no `DEVLOG.md` (sessão 2).
 
 | Métrica | Resultado |
 |---|---|

@@ -1,5 +1,7 @@
 # Plano de solução: Agente AutoSeguro (desafio FDE Namastex)
 
+> **Documento histórico.** Este é o plano inicial, escrito antes do código, mantido para mostrar o processo. O que foi implementado está no README e nos ADRs. Divergências conhecidas: os nós do grafo são `entrada`, `decidir`, `cotar`, `handoff`, `saida` e `aguardar_humano`; o hedging dispara em 1,2 s; o Omni real e o canal Harness ficaram fora do compose (`docs/omni.md`); as execuções completas estão em `docs/execucao/`; a meta de acerto de extração não foi medida à parte (a avaliação mede o resultado de ponta a ponta).
+
 Versão 1, 29/09/2026. Plano em etapas; cada etapa termina com testes que dizem se ela está pronta.
 
 ## 0. Regras de ouro (valem para todas as etapas)

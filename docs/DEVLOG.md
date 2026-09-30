@@ -2,6 +2,19 @@
 
 Diário por sessão. Para cada uma: objetivo, o que a IA propôs, o que foi aceito ou rejeitado, problemas encontrados. O export bruto de cada sessão fica em `ai-logs/sessions/`.
 
+## Onde decidi diferente da IA ou mudei o rumo
+Resumo das decisões que foram minhas, não da IA, com o trecho correspondente nos logs ou nesta página.
+- **Stack e regras de ouro** (PII, valores reais, Omni): definidas por mim antes do código; a IA propôs o papel de cada biblioteca dentro delas (ADR 0001). Log: parte 1, pedido do plano.
+- **Estudar a solução pública de outro candidato antes de desenhar a minha:** pedi a análise da arquitetura, da stack, dos dados e de como o segredo do LLM era guardado. As falhas encontradas viraram requisitos (espera de 37 s, PII indo ao LLM, data virando ano do carro). Log: parte 1 e parte 2 (17:20 e 17:24).
+- **Omni no canal:** depois da pesquisa sobre a Namastex, propus usar o Omni, uma ferramenta da própria empresa, como canal. Log: parte 1.
+- **Manter o LangGraph** quando a IA comentou alternativas de orquestração, para explorar a ferramenta a fundo. A IA passou a usar `interrupt()` e checkpoints na etapa 5 (ADR 0008). Log: parte 1.
+- **Modo dev no Docker:** pedi para não reconstruir a imagem a cada mudança (`docker-compose.dev.yml`). Log: parte 1.
+- **Healthchecks do compose:** corrigi eu mesmo o `docker-compose.yml` quando o agente subia antes do MCP (sessão 1, etapas 6 a 8).
+- **README:** rejeitei a primeira versão por ser longa demais para um deploy rápido e defini a estrutura (ficha e guia curtos primeiro, detalhes depois). Log: parte 2 (16:29 e 16:56).
+- **ai-logs:** cobrei a IA quando o export escondia demais as respostas dela ("parece que estou falando sozinho"). Log: parte 2 (17:44).
+- **Teste de deploy por terceiro** e pedido de fluxo de conversa mais natural, que geraram as correções da sessão 2.
+- **Depois da auditoria da V1 (sessão 3):** preferi não mexer no código perto da entrega e documentar as limitações encontradas (README 5.7), em vez de aplicar correções sem tempo de teste.
+
 ## Sessão 1 (29/09/2026): análise, plano e etapas 0 a 3
 **Ferramenta:** Claude (app Claude, sessão de trabalho com acesso a shell na nuvem e à pasta Projetos).
 
@@ -99,3 +112,11 @@ FIM" e o "sim" contou como fechamento; `FIM` no fim da mensagem agora encerra.
 - Segunda rodada, mesma amostra, depois das correções: preço 14/14, PII 0, frases aproveitadas 12/14 (antes 7/20), 25 de 57 extrações sem chamar o LLM. A cota diária do Groq (200 mil tokens, que não aparece no header de limite por minuto) acabou no meio: 3 conversas perdidas por erro do lead e 4 chamadas do agente recusadas (caíram nas regras, como previsto). As duas falhas que restaram são do lead simulado. A remoção do ano deixava "seu HB20 de."; agora leva a preposição junto (coberto por teste; sem cota para nova rodada ao vivo). Resultado em `docs/avaliacao.md` e `docs/avaliacao-groq.json`.
 - O fast-agent grava sessões e log em `.fast-agent/` na raiz, com o CEP da persona sem máscara; a pasta não estava no `.gitignore` e um `git add .` depois de avaliar levaria esse dado ao repositório. Adicionada.
 - A avaliação também achou: "Não, prefiro ver outro" (outro plano) virou `concorrente` no LLM e foi direto para humano. Regra nova de `pergunta_planos` para "ver outro"/"outro plano", que vence o `concorrente` do LLM quando a regra não viu concorrente.
+
+## Sessão 3 (30/09/2026): auditoria independente da V1
+Dois agentes auditores separados, sem terem escrito o código, revisaram a V1 como faria um avaliador: um a documentação e outro o código. Os achados mais graves foram conferidos no código antes de entrar aqui.
+- **Checagens:** 211 testes passando no Python 3.14.7, ruff limpo, sanitizador dos ai-logs sem achados, números de `docs/avaliacao.md` iguais aos dos JSONs.
+- **Código:** achados de durabilidade do fluxo assíncrono (tentativas pendentes dependem do Redis sem persistência, entrega ativa sem reentrega, deduplicação só em memória, falha no registro do handoff), formatos de PII fora dos padrões, filtro da frase do LLM sem numerais por extenso, hashes sem chave, `quote_id` compartilhado pelo cache e carga extra do hedging. Decisão: não alterar o código perto da entrega; tudo documentado com próximo passo no README 5.7 e nos ADRs.
+- **Documentação corrigida:** afirmação absoluta sobre PII no README trocada pela descrição real; `pii_detectada` vazio no rastreio explicado; cenário `resiliencia` passou a dizer que a falha é injetada no cliente e que os intervalos foram encurtados; comandos de reprodução da avaliação completos (`--url` obrigatório, `--extra sim`, estresse, `--saida`); 17 de 20 conversas na rodada com Groq; `TRACE_API_KEY` descrita como necessária para vendedor e rastreio; erro do Python 3.14.0rc2 na tabela de problemas comuns; ADRs com contexto, alternativas e consequências negativas; PLANO marcado como histórico; um trecho de chave removido do log da parte 2.
+- **Rejeitado:** a sugestão de tirar dos ai-logs a análise da solução do outro candidato. Ela fica, porque faz parte do processo real (seção acima).
+

@@ -2,6 +2,8 @@
 
 Gerado em 29/09/2026 16:11 por `scripts/exportar_execucao.py` contra a quote-api original (instabilidade padrão: 20% falha, 10% lenta). Texto do lead mascarado no rastreio.
 
+> **Falha injetada:** no "sim", o cliente HTTP do teste devolve 503 em toda chamada à `/quote` (transporte `Interruptor` em `scripts/exportar_execucao.py`) até o agente avisar o lead; um segundo depois a API volta e a primeira tentativa em segundo plano entrega a cotação. Assim a execução mostra sempre o mesmo caminho: tentativas rápidas, aviso ao lead e cotação em segundo plano. Os intervalos do segundo plano foram encurtados para 2, 5 e 10 s (no serviço são 5, 20 e 60 s). A chamada lenta de 8 s cortada pelo hedging não aparece aqui; ela é coberta pelos testes de `tests/unit/test_quote_client.py` e `tests/integration/test_quote_real.py`.
+
 - conversation_ref: `conv_962def31ed4dfe5c`
 - estado final: `handoff`
 - handoff: `pronto_para_fechar` (`ho_eada168845d4`)

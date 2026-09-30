@@ -19,5 +19,14 @@ A `/quote` falha 20% das vezes (500, 502, 503) e 10% das vezes demora 8 s. O bri
 - Instabilidade padrão, 30 cotações: pelo menos 29 com sucesso e p95 abaixo de 3 s.
 - Hedging: chamada de 5 s vencida pela segunda em cerca de 0,2 s.
 
-## Próximo (etapa 5)
-Resposta imediata de "estou consultando" e nova tentativa em segundo plano antes do handoff.
+## Alternativas consideradas
+- **Timeout longo e síncrono** (o da solução concorrente: 12 s com 3 tentativas): simples, mas o lead espera até cerca de 37 s e a chamada lenta de 8 s sempre é aguardada.
+- **Handoff direto na primeira falha:** manda ao vendedor um problema que se resolve em segundos. Substituído pela cotação em segundo plano (ADR 0008).
+
+## Consequências
+- O pior caso de espera do lead num turno fica em poucos segundos (máximo de 6,2 s medido na avaliação), e a chamada lenta nunca é esperada inteira.
+- Custo: o hedging manda uma segunda chamada quando a primeira passa de 1,2 s, o que aumenta a carga justamente quando a API está lenta. O breaker só abre depois de 3 cotações falhas. Próximo passo em README 5.7.
+- O cache reaproveita o `quote_id` da resposta original para leads com o mesmo perfil no mesmo dia (README 5.7).
+
+## Complemento
+A resposta imediata ao lead e a nova tentativa em segundo plano estão no ADR 0008.

@@ -409,4 +409,4 @@ Faltam as mensagens das 17h24 em diante. Como a pasta de trabalho mudou para o c
 
 A leitura de `ai-logs/raw/` é bloqueada pelas próprias regras do projeto, que protegem o export bruto. Respeito a regra: sanitizo primeiro e faço a conferência em cima da versão sanitizada.
 
-A checagem passou, mas a parte 2 continua com 7 mensagens e há uma ocorrência de `MuVMHr4m` ou `gsk_` nela. Vejo as duas coisas:
+A checagem passou, mas a parte 2 continua com 7 mensagens e há uma ocorrência de `[TRECHO_DE_CHAVE]` ou `gsk_` nela. Vejo as duas coisas:

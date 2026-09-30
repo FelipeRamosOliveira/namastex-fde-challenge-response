@@ -28,3 +28,4 @@ Na etapa 3, uma /quote fora do ar levava direto ao humano. A instabilidade do de
 ## Consequências
 - Menos handoffs desnecessários: uma queda de 30 s não chega ao vendedor.
 - O canal precisa entregar mensagens ativas (webhook ou polling); o Omni faz isso na etapa 6.
+- Limitações (README 5.7): as tentativas pendentes dependem do Redis, que no compose roda sem persistência; a entrega ativa não tem reentrega se falhar; a deduplicação por `message_id` fica na memória do processo; se o registro na fila falhar, a conversa pausa sem item na fila.
