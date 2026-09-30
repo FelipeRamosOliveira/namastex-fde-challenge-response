@@ -17,6 +17,12 @@ Requisitos do Felipe: Python 3.14, LLM com endpoint gratuito, Docker como simula
 
 A cotação é chamada por um nó determinístico do grafo, não por escolha do LLM.
 
+## Alternativas consideradas
+- **fast-agent como orquestrador:** descartado. Seria um segundo dono do estado da conversa; ficou só como simulador de leads.
+- **Orquestração só em código (sem framework):** mais simples, mas o LangGraph já traz checkpoint por conversa, `interrupt()` para o humano e histórico de estados, usados no ADR 0008. Felipe também quis explorar o LangGraph a fundo.
+- **`langchain-mcp-adapters` para ligar grafo e MCP:** descartado no ADR 0002.
+
 ## Consequências
-- Python fixado em 3.14.7: o 3.14.0rc2 quebra o pydantic (testado).
+- Python 3.14, nunca rc: o 3.14.0rc2 quebra o pydantic (testado). O `.python-version` foi de `3.14.7` para `3.14` na sessão 2, porque `uv` antigo não conhecia o 3.14.7; um `uv` antigo ainda pode escolher o rc2 (solução na tabela de problemas comuns do README).
 - Testado em 29/09/2026: LangGraph 1.2.12, FastMCP 4.0.5, fast-agent-mcp 0.10.39 importam no 3.14.7.
+- Custo: dois processos (agente e `mcp-tools`) e uma dependência a mais (LangGraph) para um fluxo que caberia numa máquina de estados simples.

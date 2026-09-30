@@ -5,10 +5,10 @@ Agente de WhatsApp que qualifica leads, cota seguro auto na API do desafio e dec
 ## Regras de ouro (não negociáveis)
 1. **PII**: todo texto passa por `guardrails/pii.py::mask` antes de LLM, log, trace ou fila. Original só no `PiiVault` da conversa.
 2. **Valores reais**: preço, franquia, carência e pro-rata saem só da resposta da `POST /quote`, formatados em `agent/templates.py`. LLM nunca escreve valor em R$. `guardrails/output.py` bloqueia qualquer R$ fora da resposta da API.
-3. **Omni**: o canal é o Omni (provider webhook + canal Harness para simulação). Etapa 6.
+3. **Omni**: o canal é o Omni (provider webhook). O Omni real e o canal Harness ficam fora do compose; passos em `docs/omni.md`.
 
 ## Stack
-- Python 3.14.7 (não usar 3.14.0rc*: quebra o pydantic), uv
+- Python 3.14 (`.python-version`; testado no 3.14.7; não usar 3.14.0rc*: quebra o pydantic), uv
 - LangGraph (orquestração, checkpoint SQLite), FastMCP 4 (ferramentas), FastAPI (API assíncrona), httpx
 - Redis (cache e circuit breaker) no Docker; memória nos testes
 - fast-agent só como simulador de leads e avaliação (etapa 6), não como orquestrador
@@ -31,6 +31,7 @@ Agente de WhatsApp que qualifica leads, cota seguro auto na API do desafio e dec
 - `src/autoseguro/data/`: pipeline Bronze, Silver, Gold
 - `vendor/challenge/`: repo original do desafio (submódulo, não editar)
 - `docs/adr/`: decisões; `docs/DEVLOG.md`: diário do desenvolvimento com IA; `ai-logs/`: export das sessões
+- Limitações conhecidas e próximos passos: README, seção 5.7. Ao corrigir uma delas, atualizar a tabela e o ADR citado.
 
 ## Convenções
 - Regras detalhadas em `.claude/rules/`.

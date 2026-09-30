@@ -9,5 +9,6 @@
 - Cache guarda a resposta da API com `quote_id`; a mesma cotação é reapresentada, não recalculada.
 - A Gold guarda a resposta da API real (rodada com falha zero) como resultado esperado.
 
-## Consequência
-Na etapa 4 o LLM só escreve texto sem valores; os valores entram pelo template.
+## Consequências
+- Na etapa 4 o LLM só escreve texto sem valores; os valores entram pelo template.
+- Limite: a frase-ponte do LLM é filtrada por lista de bloqueio (dígito, R$, promessas conhecidas). Valor por extenso ("cento e vinte") ou condição comercial genérica ("sem carência") não é pego por esse filtro nem pelo guardrail de saída, que procura `R$` seguido de número. Próximo passo em README 5.7.
