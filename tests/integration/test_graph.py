@@ -308,3 +308,15 @@ async def test_cep_cifrado_no_checkpoint_com_vault_key(stable_quote_url, tmp_pat
         assert b"01310-100" not in blob and b"01310100" not in blob
     finally:
         configurar_chave_vault(None)
+
+
+async def test_data_que_ja_passou_e_explicada(stable_quote_url, tmp_path):
+    """Avaliação com Groq: "01/10/2024" era descartada em silêncio e a pergunta se repetia."""
+    async with AutoSeguroAgent(cfg(stable_quote_url, tmp_path), hoje=lambda: date(2026, 9, 30)) as ag:
+        await conversa(ag, "c-data", ["Gol 2021, tenho 35 anos, cep 01310-100, plano completo"])
+        r = await ag.handle("c-data", "01/10/2024")
+        assert r["reply"].startswith("A data 01/10/2024 já passou (hoje é 30/09/2026).")
+        r = await ag.handle("c-data", "então amanhã")
+        assert r["stage"] == "confirmando" and "Início em 01/10/2026" in r["reply"]
+        r = await ag.handle("c-data", "início 01/10/2024")  # na confirmação também
+        assert r["stage"] == "coletando" and "já passou" in r["reply"]

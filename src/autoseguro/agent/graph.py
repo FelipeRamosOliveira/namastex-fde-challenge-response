@@ -30,7 +30,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from autoseguro.agent import templates as T
-from autoseguro.agent.extract import CAMPOS, Extractor, RuleExtractor
+from autoseguro.agent.extract import CAMPOS, Extractor, RuleExtractor, menciona_modelo
 from autoseguro.agent.gateway import ToolGateway
 from autoseguro.guardrails.output import check_output
 from autoseguro.guardrails.pii import PiiVault, mask
@@ -55,6 +55,7 @@ class AgentState(TypedDict, total=False):
     acao: str
     reply: str
     reply_prefix: str
+    reply_ack: str  # "Anotei o CEP. ": sai da resposta quando o redator escreve a frase natural
     ponte: bool
     planos_mostrados: bool
     quotes: list[dict[str, Any]]  # respostas OK da API (fonte dos valores permitidos)
@@ -111,6 +112,7 @@ def build_graph(
                 "turn_text": "",
                 "reply": "",
                 "reply_prefix": "",
+                "reply_ack": "",
                 "handoff_pendente": None,
                 "ponte": False,
                 "agendar_retry": None,
@@ -122,6 +124,7 @@ def build_graph(
             "vault": vault.to_dict(),
             "reply": "",
             "reply_prefix": "",
+            "reply_ack": "",
             "handoff_pendente": None,
             "ponte": False,
             "agendar_retry": None,
@@ -214,9 +217,11 @@ def build_graph(
         # ---- incorpora dados novos
         slots = dict(state.get("slots") or {})
         novos: dict[str, Any] = {}
+        data_passada = None
         for k, v in ex.slots.items():
             if k == "data_inicio":
                 if v < hj:
+                    data_passada = v
                     continue
                 v = v.isoformat()
             if slots.get(k) != v:
@@ -239,9 +244,14 @@ def build_graph(
 
         progresso = bool(novos) or bool(ex.intents & {"aceite", "negacao", "pergunta_planos"})
         sem_prog = 0 if progresso else state.get("turnos_sem_progresso", 0) + 1
-        # frase natural do redator só quando o lead perguntou algo ou falou fora do fluxo
-        ponte = "?" in text or (not ex.slots and not (ex.intents - {"saudacao"}))
-        if stage == "novo" and "?" not in text:
+        # frase natural do redator sempre que o lead foi além da resposta direta à pergunta:
+        # perguntou, falou fora do fluxo ou mandou dados fora de ordem. Teste ao vivo com Groq:
+        # só com pergunta ou mensagem vazia de dados, a frase quase nunca saía e o texto livre
+        # recebia as mesmas respostas do modo sem LLM. "sim", "completo", "hoje" seguem sem frase.
+        palavras = len(text.split())
+        direta = bool(ex.slots) and set(ex.slots) <= {state.get("awaiting")} and palavras <= 6
+        ponte = "?" in text or not (direta or palavras <= 3) or not (ex.slots or ex.intents - {"saudacao"})
+        if stage == "novo" and "?" not in text and palavras <= 4:
             ponte = False  # a saudação do fluxo já responde um "oi" (teste ao vivo: frase duplicada)
         base = {
             "slots": slots,
@@ -250,6 +260,20 @@ def build_graph(
             "cep_prefixo": cep_prefixo,
             "ponte": ponte,
         }
+
+        # avaliação com Groq: o lead mandou "01/10/2024", a data era descartada em silêncio e ele
+        # ouvia a mesma pergunta (e depois a mesma confirmação) até o fim da conversa
+        if data_passada and "data_inicio" not in novos:
+            slots.pop("data_inicio", None)
+            return {
+                **base,
+                "slots": slots,
+                "ponte": False,
+                "acao": "responder",
+                "stage": "coletando",
+                "awaiting": "data_inicio",
+                "reply": T.data_passada(data_passada, hj),
+            }
 
         def data_vencida() -> bool:
             di = slots.get("data_inicio")
@@ -354,14 +378,27 @@ def build_graph(
         if faltando:
             campo = faltando[0]
             # a lista de planos aparece uma vez só; depois, pergunta curta
-            pergunta = T.perguntar(campo, [] if (campo == "plano_id" and mostrados) else await planos())
+            lista = [] if (campo == "plano_id" and mostrados) else await planos()
+            # teste ao vivo: o lead mandava CEP, plano e data fora de ordem e ouvia a mesma
+            # pergunta 5 vezes, sem sinal de que foi entendido. Agora: confirma o que anotou e,
+            # se a pergunta é repetida, diz o que falta em vez de repetir igual
+            # na primeira mensagem não: a próxima pergunta já mostra o que foi entendido
+            ack = T.anotado(novos.keys() - {state.get("awaiting")}, slots) if stage != "novo" else ""
+            repetida = campo == state.get("awaiting") and stage != "novo"
+            if repetida:
+                pergunta = T.reperguntar(campo)
+            elif campo == "veiculo_ano" and menciona_modelo(text):
+                pergunta = T.PERGUNTA_SO_ANO  # "quero cotar meu hb20": não pede o modelo de novo
+            else:
+                pergunta = T.perguntar(campo, lista)
             return {
                 **base,
                 "acao": "responder",
                 "stage": "coletando",
                 "awaiting": campo,
                 "planos_mostrados": mostrados or campo == "plano_id",
-                "reply": prefix + pergunta,
+                "reply": prefix + ack + pergunta,
+                "reply_ack": ack,
             }
         return {
             **base,
@@ -519,7 +556,15 @@ def build_graph(
         if redator is not None and state.get("ponte") and state.get("stage") != "handoff":
             frase = await redator.ponte(state.get("turn_text", ""), reply)
             if frase and check_output(f"{frase} {reply}", permitidos).ok:
-                reply = f"{frase}\n{reply}"
+                if (ack := state.get("reply_ack")) and ack in reply:
+                    reply = reply.replace(ack, "", 1)  # a frase já reconhece o que o lead disse
+                sd = T.saudacao()
+                # na primeira mensagem a saudação vem antes da frase
+                reply = (
+                    f"{sd.rstrip()}\n{frase}\n{reply[len(sd) :]}"
+                    if reply.startswith(sd)
+                    else f"{frase}\n{reply}"
+                )
             events.append(_event(state, "redator", usada=bool(frase)))
         chk = check_output(reply, permitidos)
         if not chk.ok:

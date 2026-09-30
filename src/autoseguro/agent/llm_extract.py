@@ -16,10 +16,11 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from autoseguro.agent.extract import IDADE_MAX, IDADE_MIN, Extraction, RuleExtractor
+from autoseguro.agent.extract import IDADE_MAX, IDADE_MIN, Extraction, RuleExtractor, numeros_no_texto
 from autoseguro.llm.client import LLMClient, LLMIndisponivel, PiiBloqueada, parse_json
 
-PROMPT_VERSION = "extract-v2"
+PROMPT_VERSION = "extract-v4"
+DIAS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
 INTENTS = [
     "saudacao",
     "pedido_humano",
@@ -58,10 +59,12 @@ Regras:
 - cep_token: o token [CEP_n] do local onde o carro fica. Se houver dois, o do carro.
 - plano_id: essencial (básico, mais barato), completo, premium ("o mais completo", top, o melhor).
 - data_inicio: quando o seguro começa, em YYYY-MM-DD, relativo à data de hoje informada
-  ("semana que vem" = hoje + 7 dias; "mês que vem" = dia 1 do próximo mês).
+  ("semana que vem" = hoje + 7 dias; "mês que vem" = dia 1 do próximo mês; "segunda que vem" = a
+  próxima segunda-feira depois de hoje, conte a partir do dia da semana de hoje).
 - intents: o que o lead quer nesta mensagem (pode ser vazio).
   aceite = concorda/confirma/quer fechar; negacao = diz que algo está errado;
-  objecao_preco = acha caro ou vai pensar; concorrente = cita outra seguradora ou proposta;
+  objecao_preco = acha caro ou vai pensar; concorrente = cita outra SEGURADORA ou proposta de outra
+  empresa ("ver outro", "outro plano" NÃO é concorrente: é pergunta_planos);
   pedido_humano = quer atendente; fora_de_escopo = sinistro, cancelamento, outro produto;
   pergunta_planos = pergunta QUAIS planos existem ou a diferença entre eles (não vale pergunta de
   preço, de franquia ou de outro termo); midia = mandou arquivo, foto ou áudio.
@@ -78,8 +81,16 @@ class LLMExtractor:
         regras = await self.rules.extract(text, awaiting, hoje)
         if "midia" in regras.intents:
             return regras
+        # resposta curta que as regras já entenderam ("sim", "tenho 35 anos", "completo"): o LLM
+        # não acrescenta nada e só gasta cota (plano gratuito do Groq: 8 mil tokens por minuto)
+        respondeu = awaiting in regras.slots or (
+            awaiting == "confirmacao" and regras.intents & {"aceite", "negacao"}
+        )
+        if respondeu and len(text.split()) <= 3:
+            return regras
         user = (
-            f"Hoje: {hoje.isoformat()}. Pergunta que fizemos ao lead: {awaiting or 'nenhuma'}.\n"
+            f"Hoje: {hoje.isoformat()} ({DIAS[hoje.weekday()]}). "
+            f"Pergunta que fizemos ao lead: {awaiting or 'nenhuma'}.\n"
             f"<mensagem_do_lead>\n{text}\n</mensagem_do_lead>"
         )
         try:
@@ -98,7 +109,8 @@ class LLMExtractor:
 
     @staticmethod
     def _valida_e_une(data: dict[str, Any], regras: Extraction, text: str, hoje: date) -> Extraction:
-        numeros = set(re.findall(r"\d+", text))
+        # o número precisa estar no texto, em dígitos ou por extenso ("trinta e dois")
+        numeros = numeros_no_texto(text)
         out = Extraction()
 
         idade = data.get("idade")
@@ -131,6 +143,9 @@ class LLMExtractor:
         # União com as regras: teste ao vivo mostrou o LLM sem "aceite" em "isso, pode cotar".
         # Conflito aceite x negação anula os dois (o fluxo pergunta de novo).
         out.intents = llm_intents | regras.intents
+        # avaliação com Groq: "prefiro ver outro" virou concorrente e foi direto para humano
+        if "pergunta_planos" in regras.intents and "concorrente" not in regras.intents:
+            out.intents.discard("concorrente")
         if {"aceite", "negacao"} <= out.intents:  # contraditório: não age
             out.intents -= {"aceite", "negacao"}
         return out

@@ -1,0 +1,3 @@
+# .env copiado do .env.example: LF também no Windows (core.autocrlf), para `. ./.env` no bash
+.env.example text eol=lf
+*.sh text eol=lf

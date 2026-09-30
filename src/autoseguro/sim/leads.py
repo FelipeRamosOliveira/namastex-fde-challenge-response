@@ -162,7 +162,8 @@ class LeadFastAgent:
     async def responder(self, bot: str) -> str | None:
         app = await self._garantir()
         txt = self._checa((await app.lead.send(f"Atendente: {bot}")).strip())
-        return None if not txt or re.fullmatch(r"\W*FIM\W*", txt) else txt
+        # avaliação com Groq: o lead respondeu "sim\nFIM" e o "sim" virou fechamento
+        return None if not txt or re.search(r"\bFIM\W*$", txt) else txt
 
     async def fechar(self) -> None:
         if self._ctx is not None:
