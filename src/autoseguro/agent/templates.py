@@ -6,6 +6,7 @@ recebem a resposta da /quote e só formatam.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -68,6 +69,50 @@ def perguntar(campo: str, planos: list[dict[str, Any]] | None = None) -> str:
     return "Pode me passar " + NOMES_CAMPOS.get(campo, campo) + "?"
 
 
+_ANOTADOS = {
+    "veiculo_ano": "o ano do carro",
+    "idade": "sua idade",
+    "cep": "o CEP",
+    "plano_id": "o plano",
+    "data_inicio": "a data de início",
+}
+
+
+def anotado(campos: set[str] | list[str], slots: dict[str, Any]) -> str:
+    """Reconhece dados que o lead mandou fora de ordem: "Anotei o CEP e o plano Completo. " """
+    nomes = [
+        f"o plano {str(slots['plano_id']).capitalize()}" if c == "plano_id" else rotulo
+        for c, rotulo in _ANOTADOS.items()
+        if c in campos
+    ]
+    if not nomes:
+        return ""
+    lista = nomes[0] if len(nomes) == 1 else ", ".join(nomes[:-1]) + " e " + nomes[-1]
+    return f"Anotei {lista}. "
+
+
+_FALTA = {
+    "veiculo_ano": "o ano do carro (ex.: 2021)",
+    "idade": "a sua idade",
+    "cep": "o CEP de onde o carro fica à noite",
+    "plano_id": "qual plano você prefere: Essencial, Completo ou Premium",
+    "data_inicio": "a partir de quando você quer o seguro (ex.: hoje ou 15/10)",
+}
+PERGUNTA_SO_ANO = "E qual é o ano do carro? (ex.: 2021)"
+
+
+def reperguntar(campo: str) -> str:
+    """A mesma pergunta pela segunda vez: uma frase só, dizendo o que falta e por quê."""
+    return f"Pra fazer a cotação, ainda preciso saber {_FALTA.get(campo, 'esse dado')}."
+
+
+def data_passada(d: date, hoje: date) -> str:
+    return (
+        f"A data {d.strftime('%d/%m/%Y')} já passou (hoje é {hoje.strftime('%d/%m/%Y')}). "
+        "A partir de quando você quer o seguro? Pode ser hoje ou uma data daqui pra frente."
+    )
+
+
 def confirmar(slots: dict[str, Any], cep_prefixo: str | None) -> str:
     di = slots.get("data_inicio")
     if isinstance(di, str):
@@ -104,9 +149,19 @@ def apresentar(quote: dict[str, Any]) -> str:
 
 
 def recusa(motivo: str | None) -> str:
+    # o motivo da API vem sem acento e técnico ("Idade acima do limite de aceitacao (75 anos)."):
+    # vai inteiro para o vendedor no handoff; ao lead, só a razão em linguagem simples
+    m = (motivo or "").lower()
+    limite = f" (limite de {n[0]} anos)" if (n := re.findall(r"\d+", m)) else ""
+    if "veiculo" in m or "veículo" in m:  # antes de "idade": "Idade do veiculo fora das faixas"
+        razao = f" por causa do ano do carro{limite}"
+    elif "idade" in m:
+        razao = f" por causa da idade do condutor{limite}"
+    else:
+        razao = ""
     return (
         "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação "
-        f"automaticamente ({(motivo or 'perfil fora das regras de aceitação').rstrip('.')}). "
+        f"automaticamente{razao}. "
         "Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
     )
 

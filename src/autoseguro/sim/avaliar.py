@@ -13,6 +13,7 @@ Métricas:
 Uso (agente no ar, ex.: Docker; lê CHANNEL_API_KEY do ambiente ou --channel-key):
     uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 50
     uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 5 --lead fastagent
+    uv run python -m autoseguro.sim.avaliar --url http://localhost:8080 --n 20 --aleatorio 7 --lead fastagent
 Sem --url, sobe o agente em processo (precisa da quote-api em QUOTE_API_URL).
 """
 
@@ -22,6 +23,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import re
 import statistics
 import time
@@ -59,6 +61,7 @@ async def conversar(
     ativas: Ativas,
     max_turnos: int = 16,
     espera_ativa_s: float = ESPERA_ATIVA_S,
+    pausa_s: float = 0.0,
 ) -> dict[str, Any]:
     cid = f"sim-{p.case_id}-{int(time.time() * 1000)}"
     msg = await lead.abrir()
@@ -91,6 +94,7 @@ async def conversar(
         if nxt is None:
             break
         msg = nxt
+        await asyncio.sleep(pausa_s)  # tempo de uma pessoa ler e digitar (não estoura a cota do LLM)
     cotacoes = [m for m in respostas if "Cotação pronta" in m]
     return {
         "conversation_id": cid,
@@ -170,13 +174,22 @@ def salvar(caminho: Path, m: dict[str, Any], res: list[dict[str, Any]]) -> None:
     )
 
 
-def carregar_gold(n: int) -> list[dict[str, Any]]:
+def carregar_gold(n: int, semente: int | None = None) -> list[dict[str, Any]]:
+    """Os n primeiros casos ou, com semente, uma amostra aleatória reprodutível."""
     casos = [json.loads(line) for line in GOLD.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return casos[:n]
+    if semente is None:
+        return casos[:n]
+    return random.Random(semente).sample(casos, min(n, len(casos)))  # noqa: S311 - amostra, não segurança
 
 
 async def avaliar(
-    enviar: Enviar, ativas: Ativas, n: int = 50, lead: str = "roteiro", concorrencia: int = 8
+    enviar: Enviar,
+    ativas: Ativas,
+    n: int = 50,
+    lead: str = "roteiro",
+    concorrencia: int = 8,
+    semente: int | None = None,
+    pausa_s: float = 0.0,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sem = asyncio.Semaphore(concorrencia)
 
@@ -185,14 +198,14 @@ async def avaliar(
         ld = LeadFastAgent(p) if lead == "fastagent" else LeadRoteiro(p)
         async with sem:
             try:
-                return await conversar(p, ld, enviar, ativas)
+                return await conversar(p, ld, enviar, ativas, pausa_s=pausa_s)
             except RuntimeError as e:  # LLM do lead fora (cota, rede): a conversa não conta na métrica
                 return {"persona": p, "erro_lead": str(e)[:200]}
             finally:
                 if isinstance(ld, LeadFastAgent):
                     await ld.fechar()
 
-    todos = await asyncio.gather(*[um(c) for c in carregar_gold(n)])
+    todos = await asyncio.gather(*[um(c) for c in carregar_gold(n, semente)])
     validos = [r for r in todos if "erro_lead" not in r]
     m = metricas(validos)
     m["conversas_com_erro_do_lead"] = len(todos) - len(validos)
@@ -206,6 +219,10 @@ def main() -> None:
     ap.add_argument("--lead", choices=["roteiro", "fastagent"], default="roteiro")
     ap.add_argument("--saida", default=str(ROOT / "docs" / "avaliacao.json"))
     ap.add_argument("--concorrencia", type=int, default=8, help="conversas em paralelo (Groq grátis: 1 ou 2)")
+    ap.add_argument(
+        "--aleatorio", type=int, metavar="SEMENTE", help="amostra aleatória da Gold (reprodutível)"
+    )
+    ap.add_argument("--pausa", type=float, default=0.0, help="segundos entre as mensagens do lead")
     ap.add_argument("--channel-key", default=os.environ.get("CHANNEL_API_KEY"), help="x-channel-key")
     a = ap.parse_args()
     headers = {"x-channel-key": a.channel_key} if a.channel_key else {}
@@ -219,7 +236,7 @@ def main() -> None:
             async def ativas(cid):
                 return (await c.get(f"/v1/conversations/{cid}/outbox")).json()
 
-            return await avaliar(enviar, ativas, a.n, a.lead, a.concorrencia)
+            return await avaliar(enviar, ativas, a.n, a.lead, a.concorrencia, a.aleatorio, a.pausa)
 
     m, res = asyncio.run(run())
     salvar(Path(a.saida), m, res)

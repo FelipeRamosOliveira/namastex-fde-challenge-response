@@ -18,3 +18,19 @@ async def test_simulador_roda_casos_da_gold(stable_quote_url, tmp_path):
     assert m["taxa_acerto_preco"] == 1.0, m
     assert m["vazamento_pii_respostas"] == 0
     assert "recusa_regra" in m["handoffs"]  # há casos inelegíveis na Gold
+
+
+async def test_lead_que_diz_fim_depois_de_outra_palavra_sai():
+    """Avaliação com Groq: o lead respondeu "sim\nFIM" e o "sim" virou fechamento."""
+    from autoseguro.sim.leads import LeadFastAgent
+
+    ld = LeadFastAgent.__new__(LeadFastAgent)
+
+    class App:
+        class lead:  # noqa: N801 - imita o fast-agent
+            @staticmethod
+            async def send(_):
+                return "sim  \nFIM"
+
+    ld._app = App()
+    assert await ld.responder("Cotação pronta!") is None

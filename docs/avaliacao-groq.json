@@ -1,0 +1,686 @@
+{
+ "metricas": {
+  "conversas": 17,
+  "elegiveis": 11,
+  "ponta_a_ponta": "10/11",
+  "taxa_ponta_a_ponta": 0.909,
+  "acerto_preco": "14/14",
+  "taxa_acerto_preco": 1.0,
+  "handoffs": {
+   "recusa_regra": 6,
+   "objecao_preco": 3,
+   "pronto_para_fechar": 5
+  },
+  "handoff_coerente": "13/14",
+  "handoff_api_indisponivel": 0,
+  "sem_desfecho": 0,
+  "cotacao_em_segundo_plano": 0,
+  "vazamento_pii_respostas": 0,
+  "latencia_turno_ms": {
+   "p50": 431.6,
+   "p95": 1214.1,
+   "max": 1357.1,
+   "media": 395.7
+  },
+  "conversas_com_erro_do_lead": 3
+ },
+ "conversas": [
+  {
+   "conversation_id": "sim-conv_01299-1790784941224",
+   "turnos": [
+    {
+     "lead": "Oi quero cotar seguro Civic 2005 65 anos cep [CEP_1] premium",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    653.0
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_01299",
+   "desfecho": "ganho",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_00513-1790784948887",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro para meu Fiat Toro 2023, 31 anos, CEP [CEP_1], plano essencial. O preço tá caro, vi outro mais barato.",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendo que você está buscando uma opção mais econômica para o seu Fiat Toro.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje.",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2023\n- Idade 31 anos\n- CEP da região 41xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Essencial*: R$ 119,90 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,00 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Prefiro ver outro, tá caro, outro deu menos.",
+     "bot": "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    926.3,
+    69.4,
+    50.3,
+    698.5
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendo que você está buscando uma opção mais econômica para o seu Fiat Toro.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2023\n- Idade 31 anos\n- CEP da região 41xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Essencial*: R$ 119,90 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,00 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "objecao_preco",
+   "cotacoes": [
+    "Cotação pronta! Plano *Essencial*: R$ 119,90 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,00 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00513",
+   "desfecho": "perdido",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_01668-1790785012972",
+   "turnos": [
+    {
+     "lead": "Oi, preciso cotar seguro completo pra meu Fiat Toro 2021. Tenho 71 anos. CEP [CEP_1]. Obrigado.",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer um seguro completo para seu Fiat Toro. Vamos continuar!\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje.",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2021\n- Idade 71 anos\n- CEP da região 80xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    }
+   ],
+   "latencias_ms": [
+    613.8,
+    40.5
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer um seguro completo para seu Fiat Toro. Vamos continuar!\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2021\n- Idade 71 anos\n- CEP da região 80xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)"
+   ],
+   "estado_final": "confirmando",
+   "motivo_handoff": null,
+   "cotacoes": [],
+   "case_id": "conv_01668",
+   "desfecho": "sem_resposta",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_00193-1790785036464",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro pra HB20 2003, plano premium. Onde o carro mora 80000‑000.",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    529.3
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_00193",
+   "desfecho": "sem_resposta",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_00295-1790785037780",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotação de seguro. Meu carro é VW Nivus 2017, 64 anos, CEP [CEP_1], plano essencial.",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi que você quer cotar o plano essencial para o seu VW Nivus.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje.",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2017\n- Idade 64 anos\n- CEP da região 41xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "Sim.",
+     "bot": "Cotação pronta! Plano *Essencial*: R$ 193,04 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 6,43 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Quero fechar.",
+     "bot": "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    822.3,
+    66.9,
+    50.8,
+    51.7
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi que você quer cotar o plano essencial para o seu VW Nivus.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2017\n- Idade 64 anos\n- CEP da região 41xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Essencial*: R$ 193,04 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 6,43 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "pronto_para_fechar",
+   "cotacoes": [
+    "Cotação pronta! Plano *Essencial*: R$ 193,04 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 6,43 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00295",
+   "desfecho": "ganho",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_02362-1790785101069",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro completo pra Nivus 2001. Tenho 24 anos. CEP [CEP_1].",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    449.0
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_02362",
+   "desfecho": "ganho",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_00328-1790785102465",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro premium Corolla Cross 2003 54 anos [CEP_1]",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    559.7
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_00328",
+   "desfecho": "sem_resposta",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_01472-1790785103829",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro completo para Yaris 2018 41 anos [CEP_1]",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer um seguro completo para o seu Yaris. Vamos continuar!\nE qual é a sua idade?",
+     "stage": "coletando"
+    },
+    {
+     "lead": "41",
+     "bot": "A partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2018\n- Idade 41 anos\n- CEP da região 13xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Completo*: R$ 241,38 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 8,05 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Achei caro, vou pensar.",
+     "bot": "Entendo, é normal querer avaliar bem antes de decidir. Quando estiver pronto, estou à disposição para ajudar.\nEntendo. Uma opção mais em conta é o plano Essencial.\nCotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Prefiro ver outro.",
+     "bot": "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Premium",
+     "bot": "Cotação pronta! Plano *Premium*: R$ 390,88 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,03 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Achei caro, vou pensar.",
+     "bot": "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    1357.1,
+    43.1,
+    70.5,
+    48.9,
+    465.3,
+    32.7,
+    902.1,
+    34.5
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer um seguro completo para o seu Yaris. Vamos continuar!\nE qual é a sua idade?",
+    "A partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2018\n- Idade 41 anos\n- CEP da região 13xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Completo*: R$ 241,38 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 8,05 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Entendo, é normal querer avaliar bem antes de decidir. Quando estiver pronto, estou à disposição para ajudar.\nEntendo. Uma opção mais em conta é o plano Essencial.\nCotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+    "Cotação pronta! Plano *Premium*: R$ 390,88 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,03 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "objecao_preco",
+   "cotacoes": [
+    "Cotação pronta! Plano *Completo*: R$ 241,38 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 8,05 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Entendo, é normal querer avaliar bem antes de decidir. Quando estiver pronto, estou à disposição para ajudar.\nEntendo. Uma opção mais em conta é o plano Essencial.\nCotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Cotação pronta! Plano *Premium*: R$ 390,88 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,03 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_01472",
+   "desfecho": "em_negociacao",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_02491-1790785251033",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotação de seguro pra um Onix Plus 2002. Sou 73 anos, CEP [CEP_1], plano essencial. Obrigado.",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    616.7
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_02491",
+   "desfecho": "ganho",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_00231-1790785252309",
+   "turnos": [
+    {
+     "lead": "Oi preciso cotar seguro Corolla Cross 2020 55 anos CEP [CEP_1] plano essencial",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer cotar o seguro do seu Corolla Cross com o plano essencial.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2020\n- Idade 55 anos\n- CEP da região 30xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "quero fechar!",
+     "bot": "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    859.4,
+    30.0,
+    35.4,
+    384.1
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer cotar o seguro do seu Corolla Cross com o plano essencial.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2020\n- Idade 55 anos\n- CEP da região 30xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "pronto_para_fechar",
+   "cotacoes": [
+    "Cotação pronta! Plano *Essencial*: R$ 137,88 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 4,60 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00231",
+   "desfecho": "ganho",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_02251-1790785316091",
+   "turnos": [
+    {
+     "lead": "Oi, preciso de cotação de seguro completo pro Renegade 2020, 69 anos, cep [CEP_1].",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer uma cotação completa para o seu Renegade.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "hoje",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2020\n- Idade 69 anos\n- CEP da região 07xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Completo*: R$ 439,32 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 14,64 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "sim",
+     "bot": "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    732.5,
+    29.2,
+    42.5,
+    431.6
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer uma cotação completa para o seu Renegade.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2020\n- Idade 69 anos\n- CEP da região 07xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Completo*: R$ 439,32 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 14,64 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "pronto_para_fechar",
+   "cotacoes": [
+    "Cotação pronta! Plano *Completo*: R$ 439,32 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 14,64 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_02251",
+   "desfecho": "sem_resposta",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_00799-1790785379624",
+   "turnos": [
+    {
+     "lead": "Oi quero cotar seguro premium pra HB20 2017 tenho 66 anos CEP [CEP_1]",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer o seguro premium para seu HB20 de.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "hoje",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2017\n- Idade 66 anos\n- CEP da região 80xxx\n- Plano Premium\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Premium*: R$ 547,24 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,24 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    }
+   ],
+   "latencias_ms": [
+    766.3,
+    30.2,
+    32.1
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer o seguro premium para seu HB20 de.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2017\n- Idade 66 anos\n- CEP da região 80xxx\n- Plano Premium\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Premium*: R$ 547,24 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,24 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "estado_final": "cotado",
+   "motivo_handoff": null,
+   "cotacoes": [
+    "Cotação pronta! Plano *Premium*: R$ 547,24 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,24 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00799",
+   "desfecho": "sem_resposta",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_00140-1790785423106",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro completo pra meu Creta 2012, 54 anos, cep [CEP_1]",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, seu Creta está pronto para a cotação.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2012\n- Idade 54 anos\n- CEP da região 08xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "fecho 🚗👍",
+     "bot": "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    813.6,
+    44.3,
+    41.6,
+    500.8
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, seu Creta está pronto para a cotação.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2012\n- Idade 54 anos\n- CEP da região 08xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "pronto_para_fechar",
+   "cotacoes": [
+    "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00140",
+   "desfecho": "ganho",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_00322-1790785486985",
+   "turnos": [
+    {
+     "lead": "Oi quero cotar seguro Gol 2006 60 anos [CEP_1] plano essencial achei caro vou pensar",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você está considerando o plano essencial para o seu Gol.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje.",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2006\n- Idade 60 anos\n- CEP da região 07xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "prefiro ver outro.",
+     "bot": "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Completo",
+     "bot": "Cotação pronta! Plano *Completo*: R$ 553,93 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,46 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "prefiro ver outro.",
+     "bot": "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Essencial",
+     "bot": "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Prefiro pensar.",
+     "bot": "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    1214.1,
+    30.1,
+    38.6,
+    585.7,
+    1049.8,
+    28.7,
+    601.9,
+    664.7
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você está considerando o plano essencial para o seu Gol.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2006\n- Idade 60 anos\n- CEP da região 07xxx\n- Plano Essencial\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+    "Cotação pronta! Plano *Completo*: R$ 553,93 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,46 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Temos 3 planos:\n- *Essencial*: colisão, roubo, furto\n- *Completo*: colisão, roubo, furto, danos a terceiros, vidros\n- *Premium*: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h\nQual deles você quer cotar?",
+    "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Entendo. Vou passar pra um consultor, que pode avaliar outras condições com você."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "objecao_preco",
+   "cotacoes": [
+    "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Cotação pronta! Plano *Completo*: R$ 553,93 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 18,46 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Cotação pronta! Plano *Essencial*: R$ 316,42 por mês.\nCoberturas: colisão, roubo, furto. Franquia de R$ 4.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 10,55 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00322",
+   "desfecho": "em_negociacao",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_01926-1790785636472",
+   "turnos": [
+    {
+     "lead": "Oi, preciso de cotação de seguro completo pra Renegade 2007, 36 anos, [CEP_1].",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer uma cotação completa para o seu Renegade. Vamos prosseguir!\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "Hoje.",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2007\n- Idade 36 anos\n- CEP da região 07xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "Sim.",
+     "bot": "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    },
+    {
+     "lead": "Fecho. Obrigado!Fecho.",
+     "bot": "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    782.8,
+    23.8,
+    32.3,
+    470.4
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer uma cotação completa para o seu Renegade. Vamos prosseguir!\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2007\n- Idade 36 anos\n- CEP da região 07xxx\n- Plano Completo\n- Início em 30/09/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+    "Ótimo! Um consultor vai te chamar em seguida pra emitir a apólice e o boleto, com a cotação que acabamos de fazer."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "pronto_para_fechar",
+   "cotacoes": [
+    "Cotação pronta! Plano *Completo*: R$ 395,66 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros. Franquia de R$ 3.000,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 13,19 (1 de 30 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_01926",
+   "desfecho": "ganho",
+   "elegivel": true
+  },
+  {
+   "conversation_id": "sim-conv_01820-1790785699945",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro completo Sandero 2005 28 anos CEP 59000‑000",
+     "bot": "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui.",
+     "stage": "handoff"
+    }
+   ],
+   "latencias_ms": [
+    529.1
+   ],
+   "respostas": [
+    "Obrigado pelas informações! Pelas regras da seguradora, não consigo concluir essa cotação automaticamente por causa do ano do carro (limite de 20 anos). Vou passar seu atendimento para um especialista, que vai te chamar por aqui."
+   ],
+   "estado_final": "handoff",
+   "motivo_handoff": "recusa_regra",
+   "cotacoes": [],
+   "case_id": "conv_01820",
+   "desfecho": "ganho",
+   "elegivel": false
+  },
+  {
+   "conversation_id": "sim-conv_00285-1790785701594",
+   "turnos": [
+    {
+     "lead": "Oi, quero cotar seguro pra Honda HR-V 2024 34 anos [CEP_1] plano premium.",
+     "bot": "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer o plano premium para a Honda HR‑V.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+     "stage": "coletando"
+    },
+    {
+     "lead": "15/10",
+     "bot": "Só pra confirmar antes de cotar:\n- Carro ano 2024\n- Idade 34 anos\n- CEP da região 01xxx\n- Plano Premium\n- Início em 15/10/2026\nEstá certo? (sim / não)",
+     "stage": "confirmando"
+    },
+    {
+     "lead": "sim",
+     "bot": "Cotação pronta! Plano *Premium*: R$ 339,90 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 186,40 (17 de 31 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?",
+     "stage": "cotado"
+    }
+   ],
+   "latencias_ms": [
+    1321.8,
+    27.3,
+    41.5
+   ],
+   "respostas": [
+    "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\nEntendi, você quer o plano premium para a Honda HR‑V.\nA partir de quando você quer o seguro? Pode ser hoje ou uma data (ex.: 15/10).",
+    "Só pra confirmar antes de cotar:\n- Carro ano 2024\n- Idade 34 anos\n- CEP da região 01xxx\n- Plano Premium\n- Início em 15/10/2026\nEstá certo? (sim / não)",
+    "Cotação pronta! Plano *Premium*: R$ 339,90 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 186,40 (17 de 31 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "estado_final": "cotado",
+   "motivo_handoff": null,
+   "cotacoes": [
+    "Cotação pronta! Plano *Premium*: R$ 339,90 por mês.\nCoberturas: colisão, roubo, furto, danos a terceiros, vidros, carro reserva, assistência 24h. Franquia de R$ 1.500,00.\nAtenção: roubo e furto só passam a valer depois de 30 dias de carência.\nComo o início é no meio do mês, o primeiro pagamento é proporcional: R$ 186,40 (17 de 31 dias). Os meses seguintes são integrais.\nQuer fechar com esse plano ou prefere ver outro?"
+   ],
+   "case_id": "conv_00285",
+   "desfecho": "sem_resposta",
+   "elegivel": true
+  }
+ ]
+}

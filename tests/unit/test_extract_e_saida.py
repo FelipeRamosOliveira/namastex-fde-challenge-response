@@ -42,6 +42,20 @@ ex = RuleExtractor()
         ("pode ser", "data_inicio", {"data_inicio": HOJE}),
         ("quero o top, o mais barato não serve", "plano_id", {}),
         ("não quero o premium, quero o completo", "plano_id", {"plano_id": "completo"}),
+        # vistos no teste de deploy externo com Docker + Groq (30/09/2026); HOJE é uma terça
+        ("tenho trinta e dois", "idade", {"idade": 32}),
+        ("tenho trinta e dois anos", None, {"idade": 32}),
+        ("setenta e cinco anos de idade", None, {"idade": 75}),
+        ("pode ser a partir de segunda que vem", "data_inicio", {"data_inicio": date(2026, 10, 5)}),
+        ("segunda-feira", "data_inicio", {"data_inicio": date(2026, 10, 5)}),
+        ("terça", "data_inicio", {"data_inicio": date(2026, 10, 6)}),  # hoje é terça: a próxima
+        ("sexta da semana que vem", "data_inicio", {"data_inicio": date(2026, 10, 9)}),
+        ("é do ano passado", None, {"veiculo_ano": 2025}),
+        ("ano passado", "veiculo_ano", {"veiculo_ano": 2025}),
+        ("um hb20 zero km", None, {"veiculo_ano": 2026}),
+        ("comprei um hb20 ano passado", None, {}),  # ano da compra, não do modelo
+        ("comprei ano passado", "veiculo_ano", {}),
+        ("um gol, tenho um filho", None, {}),  # "um" é artigo, não número
     ],
 )
 async def test_extrai_slots(texto, awaiting, esperado):
@@ -58,6 +72,8 @@ async def test_extrai_slots(texto, awaiting, esperado):
         ("o preco ta salgado", "objecao_preco"),
         ("a Azul me ofereceu menos", "concorrente"),
         ("quais planos voces tem?", "pergunta_planos"),
+        ("Não, prefiro ver outro.", "pergunta_planos"),
+        ("quero ver outro plano", "pergunta_planos"),
         ("[audio] mensagem de voz (18s)", "midia"),
         ("[image] foto.jpg", "midia"),
         ("[document] cnh.pdf", "midia"),
@@ -65,6 +81,26 @@ async def test_extrai_slots(texto, awaiting, esperado):
 )
 async def test_intencoes(texto, intent):
     assert intent in (await ex.extract(texto, None, HOJE)).intents
+
+
+def test_recusa_sem_texto_cru_da_api():
+    from autoseguro.agent.templates import recusa
+
+    idade = recusa("Idade acima do limite de aceitacao (75 anos).")
+    assert "condutor (limite de 75 anos)" in idade and "aceitacao" not in idade
+    assert "ano do carro (limite de 20 anos)" in recusa("Veiculo com mais de 20 anos nao e aceito.")
+    assert "ano do carro" in recusa("Idade do veiculo fora das faixas aceitas.")
+
+
+def test_anotado_e_reperguntar():
+    from autoseguro.agent.templates import anotado, reperguntar
+
+    assert anotado({"cep", "plano_id"}, {"plano_id": "completo"}) == "Anotei o CEP e o plano Completo. "
+    assert anotado(set(), {}) == ""
+    assert (
+        reperguntar("veiculo_ano") == "Pra fazer a cotação, ainda preciso saber o ano do carro (ex.: 2021)."
+    )
+    assert reperguntar("idade") == "Pra fazer a cotação, ainda preciso saber a sua idade."
 
 
 def test_parse_data_passada_vira_proximo_ano():

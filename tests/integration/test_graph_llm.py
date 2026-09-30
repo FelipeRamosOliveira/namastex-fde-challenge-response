@@ -87,3 +87,49 @@ async def test_oi_inicial_nao_ganha_frase_do_redator(stable_quote_url, tmp_path)
     async with AutoSeguroAgent(s, llm=llm) as ag:
         r = await ag.handle("L2", "oi")
     assert r["reply"].startswith("Oi! Aqui é o assistente")
+
+
+async def test_texto_livre_ganha_frase_e_confirmacao_do_que_foi_anotado(stable_quote_url, tmp_path):
+    """Teste de deploy externo (30/09/2026): com Groq ligado, dados fora de ordem recebiam a
+    mesma pergunta 5 vezes, sem frase do redator: igual ao modo sem LLM."""
+
+    def extrai(t: str) -> dict:
+        t = t.lower()
+        if "[cep_" in t:
+            return {"cep_token": t[t.index("[cep_") : t.index("]", t.index("[cep_")) + 1].upper()}
+        if "plano do meio" in t:
+            return {"plano_id": "completo"}
+        return {}
+
+    def redige(t: str) -> str:
+        if "plano do meio" in t:
+            return ""  # LLM sem frase: a confirmação determinística aparece
+        if "pode cotar" in t:
+            return "Claro, vamos cotar agora!"  # anuncia passo que não acontece: descartada
+        return "Perfeito, anotado!"
+
+    fake = FakeLLM(extrair=extrai, redigir=redige)
+    llm = LLMClient([GROQ], MemoryStore(), fake.http())
+    s = Settings(_env_file=None, quote_api_url=stable_quote_url, checkpoint_db=str(tmp_path / "ck.sqlite"))
+    async with AutoSeguroAgent(s, llm=llm, hoje=lambda: date(2026, 9, 30)) as ag:
+        r1 = await ag.handle("L3", "boa tarde! comprei um hb20 ano passado, quanto fica o seguro?")
+        r2 = await ag.handle("L3", "moro na paulista, cep 01310-100")
+        r3 = await ag.handle("L3", "quero o plano do meio, nao preciso de carro reserva")
+        r4 = await ag.handle("L3", "isso mesmo, pode cotar")
+        r5 = await ag.handle("L3", "é do ano passado")
+        r6 = await ag.handle("L3", "32")  # resposta curta e direta: sem frase
+
+    # 1º turno: saudação, frase e só o ano (o modelo o lead já disse)
+    assert r1["reply"] == (
+        "Oi! Aqui é o assistente da AutoSeguro. Vou te ajudar a cotar o seguro do seu carro.\n"
+        "Perfeito, anotado!\nE qual é o ano do carro? (ex.: 2021)"
+    )
+    # com frase do LLM, o "Anotei" determinístico sai (nada de confirmar duas vezes)
+    assert r2["reply"] == (
+        "Perfeito, anotado!\nPra fazer a cotação, ainda preciso saber o ano do carro (ex.: 2021)."
+    )
+    # sem frase, a confirmação determinística fica
+    assert r3["reply"].startswith("Anotei o plano Completo. Pra fazer a cotação, ainda preciso saber o ano")
+    assert "vamos cotar" not in r4["reply"] and r4["reply"].startswith("Pra fazer a cotação")
+    assert r5["stage"] == "coletando" and "idade" in r5["reply"]
+    assert not r6["reply"].startswith("Perfeito")

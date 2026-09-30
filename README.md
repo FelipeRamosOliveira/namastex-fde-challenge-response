@@ -35,7 +35,9 @@ vendor/challenge/  submódulo com o desafio original
 
 ## 2. Guia rápido
 
-Pré-requisitos: `git` e Docker com Compose v2.
+Pré-requisitos: `git`, Docker com Compose v2 e Python 3 (só para gerar o `.env` no passo 2).
+
+> **Windows:** rode os comandos no Git Bash ou no WSL (eles usam sintaxe de bash; no PowerShell, `curl` é outro comando e `set -a` não existe). No passo 2, troque `python3` por `python` se o `python3` abrir a Microsoft Store.
 
 **1. Clonar** (o submódulo traz a quote-api original):
 ```bash
@@ -62,7 +64,7 @@ set -a; . ./.env; set +a
 curl -s localhost:8080/v1/messages -H 'content-type: application/json' -H "x-channel-key: $CHANNEL_API_KEY" -d '{"conversation_id":"demo","text":"oi, quero cotar meu Onix 2021"}'
 ```
 
-**6. (Opcional) Ligar o LLM:** coloque a chave em `GROQ_API_KEY=` no `.env` e rode `docker compose up -d` de novo. A chave é gratuita e pode ser gerada em https://console.groq.com/keys. Sem ela o agente funciona só com regras, avisa no log ao subir e mostra `"llm": {"ativo": false, ...}` em `GET /health`.
+**6. (Opcional) Ligar o LLM:** coloque a chave em `GROQ_API_KEY=` no `.env` e rode `docker compose up -d` de novo. No plano gratuito do Groq (8 mil tokens por minuto, 200 mil por dia) cabem ~100 conversas por dia; acima disso o agente segue só com regras até a cota voltar. A chave é gratuita e pode ser gerada em https://console.groq.com/keys. Sem ela o agente funciona só com regras, avisa no log ao subir e mostra `"llm": {"ativo": false, ...}` em `GET /health`.
 
 > **Para o avaliador:** junto com o link desta resposta foi enviada uma chave do Groq com validade de 30 dias. Basta colá-la em `GROQ_API_KEY=` no passo 6.
 
@@ -185,11 +187,11 @@ uv sync
 (cd vendor/challenge/quote-service && ../../../.venv/bin/python -m uvicorn app.main:app --port 8000) &
 uv run uvicorn autoseguro.api.app:app --port 8080
 ```
-Sem `REDIS_URL` e sem `MCP_URL`, cache e fila ficam em memória e as ferramentas MCP rodam no mesmo processo. Sem `CHANNEL_API_KEY`, o canal fica aberto (aviso no log; só para desenvolvimento).
+No Windows, o Python do venv fica em `.venv/Scripts/python`. Sem `REDIS_URL` e sem `MCP_URL`, cache e fila ficam em memória e as ferramentas MCP rodam no mesmo processo. Sem `CHANNEL_API_KEY`, o canal fica aberto (aviso no log; só para desenvolvimento).
 
 ### 4.4 Testes e checagens
 ```bash
-uv run pytest                      # 176 testes: unitários + integração contra a quote-api original (LLM simulado)
+uv run pytest                      # 211 testes: unitários + integração contra a quote-api original (LLM simulado)
 uv run ruff check src tests scripts
 uv run python scripts/sanitize_ai_logs.py --check
 uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GROQ_API_KEY e rede)
@@ -204,6 +206,8 @@ uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GR
 | `401 chave do canal inválida` | Falta o header | Enviar `-H "x-channel-key: $CHANNEL_API_KEY"` |
 | `403 conversas do Omni entram só por /omni/webhook` | `conversation_id` começando com `omni:` | Usar outro id; ids `omni:` são reservados ao webhook |
 | `"stage":"aguardando_cotacao"` | A `/quote` falhou (instabilidade do desafio) | Esperado: consultar `GET /v1/conversations/<id>/outbox` depois de alguns segundos |
+| `No interpreter found for Python 3.14...` no `uv` | `uv` antigo sem o Python 3.14 | `uv self update` ou `uv python install 3.14` |
+| `.env` com chaves vazias depois do passo 2 | `python3` não existe (Windows) | Rodar o mesmo comando com `python` |
 | Resposta sem frase natural | LLM desligado ou sem rede | `curl -s localhost:8080/health`: se `"llm"` vier com `"ativo": false`, falta `GROQ_API_KEY` no `.env` (depois, `docker compose up -d`) |
 
 ### 4.6 Regras para quem for mexer no código (pessoa ou IA)
@@ -224,8 +228,9 @@ Avaliação completa em `docs/avaliacao.md`.
 |---|---|---|---|---|---|
 | Instabilidade padrão (20% falha, 10% lenta), 300 conversas | 210/210 | 284/284 | 258/258 | 4 | 0 |
 | Estresse (50% falha, 20% lenta), 100 conversas | 72/72 | 96/96 | 87/87 | 18 | 0 |
+| Groq nos dois lados (lead por LLM), 20 conversas aleatórias | 10/11 | 14/14 | 13/14 | 0 | 0 |
 
-Nos dois cenários nenhuma conversa ficou sem desfecho e nenhuma foi para humano por indisponibilidade da API.
+Nos cenários sem LLM nenhuma conversa ficou sem desfecho e nenhuma foi para humano por indisponibilidade da API. Com Groq, as duas falhas são do lead simulado, que nem sempre segue a persona (detalhes em `docs/avaliacao.md`).
 
 ### 5.2 Quando o agente passa para um humano
 

@@ -105,6 +105,9 @@ async def test_injecao_no_texto_do_lead_vai_delimitada():
         ("Em 2 dias sai a apólice.", False),
         ("Claro, [NOME_1]!", False),
         ("x" * 200, False),
+        ("Que bom, vamos cuidar do seu HB20!", True),  # modelo não é valor
+        ("Seu HB20 sai por 99 ao mês.", False),
+        ("O S10 tem 32 anos?", False),
     ],
 )
 def test_frase_do_redator(frase, ok):
@@ -163,3 +166,72 @@ def test_erro_do_fast_agent_nao_vira_fala_do_lead():
     with pytest.raises(RuntimeError, match="LLM do lead falhou"):
         LeadFastAgent._checa("I hit an internal error while calling the model: groq request failed")
     assert LeadFastAgent._checa("oi, quero cotar") == "oi, quero cotar"
+
+
+async def test_idade_por_extenso_do_llm_e_aceita():
+    """Teste de deploy externo: o LLM entendia "trinta e dois", mas a validação exigia dígitos."""
+    fake = FakeLLM(extrair=lambda t: {"idade": 32})
+    ex = await LLMExtractor(cliente(fake)).extract("tenho trinta e dois", "veiculo_ano", HOJE)
+    assert ex.slots == {"idade": 32}
+
+
+async def test_idade_inventada_pelo_llm_continua_descartada():
+    fake = FakeLLM(extrair=lambda t: {"idade": 40})
+    ex = await LLMExtractor(cliente(fake)).extract("tenho trinta e dois", "veiculo_ano", HOJE)
+    assert "idade" not in ex.slots
+
+
+async def test_prompt_leva_o_dia_da_semana_e_regra_de_dia_vence():
+    """Teste de deploy externo: numa quarta, o LLM leu "segunda que vem" como a sexta seguinte."""
+    fake = FakeLLM(extrair=lambda t: {"data_inicio": "2026-10-02"})
+    ex = await LLMExtractor(cliente(fake)).extract("a partir de segunda que vem", "data_inicio", HOJE)
+    assert "(terça-feira)" in fake.requests[0]["messages"][-1]["content"]
+    assert ex.slots["data_inicio"] == date(2026, 10, 5)
+
+
+async def test_ver_outro_plano_nao_vira_concorrente():
+    """Avaliação com Groq: "prefiro ver outro" virou concorrente e foi direto para humano."""
+    fake = FakeLLM(extrair=lambda t: {"intents": ["concorrente", "negacao"]})
+    ex = await LLMExtractor(cliente(fake)).extract("Não, prefiro ver outro.", None, HOJE)
+    assert "concorrente" not in ex.intents and "pergunta_planos" in ex.intents
+
+
+async def test_concorrente_de_verdade_continua():
+    fake = FakeLLM(extrair=lambda t: {"intents": ["concorrente"]})
+    ex = await LLMExtractor(cliente(fake)).extract("a Allianz me fez por menos", None, HOJE)
+    assert "concorrente" in ex.intents
+
+
+async def test_resposta_curta_entendida_pelas_regras_nao_gasta_llm():
+    fake = FakeLLM(extrair=lambda t: {})
+    extr = LLMExtractor(cliente(fake))
+    assert (await extr.extract("tenho 35 anos", "idade", HOJE)).slots == {"idade": 35}
+    assert "aceite" in (await extr.extract("sim", "confirmacao", HOJE)).intents
+    assert fake.requests == []
+    await extr.extract("tenho trinta e dois", "veiculo_ano", HOJE)  # não respondeu o que foi pedido
+    assert len(fake.requests) == 1
+
+
+def test_ano_que_o_lead_escreveu_sai_da_frase():
+    from autoseguro.agent.redator import sem_ano_ecoado
+
+    lead = "quero cotar meu Fiat Toro 2023, plano essencial"
+    frase = sem_ano_ecoado("Show, vamos cuidar do seu Fiat Toro 2023!", lead)
+    assert frase == "Show, vamos cuidar do seu Fiat Toro!" and frase_valida(frase)
+    assert not frase_valida(sem_ano_ecoado("Seu carro de 2019 é ótimo!", lead))  # ano inventado
+    assert (
+        sem_ano_ecoado("Certo, premium para seu HB20 de 2017.", "hb20 2017")
+        == "Certo, premium para seu HB20."
+    )
+    assert sem_ano_ecoado("Um carro do ano 2020, ótimo!", "renegade 2020") == "Um carro, ótimo!"
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        "Entendi, vamos encaminhar seu pedido para um especialista.",
+        "Vamos ver se conseguimos ajustar algo ao seu orçamento.",
+    ],
+)
+def test_frase_nao_decide_handoff_nem_condicao(frase):
+    assert not frase_valida(frase)

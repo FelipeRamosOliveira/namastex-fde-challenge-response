@@ -24,3 +24,6 @@ ai-logs/raw/
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/worktrees/
+
+# sessões e log do lead simulado (fast-agent): a persona tem o CEP sem máscara
+.fast-agent/
