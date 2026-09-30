@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     quote_api_url: str = "http://localhost:8000"
     quote_timeout_s: float = 2.5  # corta a chamada lenta (8 s) cedo
     quote_hedge_after_s: float = 1.2  # dispara 2a chamada se a 1a demorar
+    quote_hedge_budget_ratio: float = 0.1  # hedges por minuto: no máximo 10% das cotações...
+    quote_hedge_budget_min: int = 3  # ...com um piso, para o tráfego baixo não ficar sem hedge
     quote_max_attempts: int = 4  # total de chamadas por cotação
     quote_backoff_base_s: float = 0.2
     quote_backoff_max_s: float = 1.5
@@ -38,6 +40,8 @@ class Settings(BaseSettings):
     channel_api_key: SecretStr | None = None  # se definida, exigida em POST /v1/messages
     exigir_segredos: bool = False  # true (Docker): não sobe sem CHANNEL_API_KEY e VAULT_KEY
     vault_key: SecretStr | None = None  # chave Fernet: cifra o CEP guardado no checkpoint
+    # segredo do HMAC dos pseudônimos (id da conversa, hashes do vault); trocar muda os ids
+    pseudonimo_key: SecretStr | None = None
 
     # --- Conversa ---
     max_turnos_sem_progresso: int = 6
@@ -45,6 +49,7 @@ class Settings(BaseSettings):
     retry_fundo_delays_s: list[float] = [5.0, 20.0, 60.0]
     # Entrega ativa ao canal (Omni ou outro); sem URL, o canal busca em GET .../outbox
     outbound_webhook_url: str | None = None
+    reentrega_intervalo_s: float = 10.0  # passada da reentrega de mensagens ativas que falharam
 
     # --- Omni (canal) ---
     omni_url: str | None = None  # ex.: http://omni-api:8882 (para mensagens ativas)

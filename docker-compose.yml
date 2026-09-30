@@ -20,7 +20,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # AOF ligado: tentativas pendentes, deduplicação, fila de handoff e reentregas sobrevivem a um
+    # reinício do Redis (auditoria: sem persistência, a conversa em espera perdia a tentativa)
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -69,3 +73,4 @@ services:
 
 volumes:
   agent-data:
+  redis-data:

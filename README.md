@@ -3,7 +3,7 @@
 Agente de WhatsApp da seguradora fictícia AutoSeguro (desafio FDE da Namastex). Ele conversa com o lead, coleta os dados, cota na API do desafio e decide quando passar a conversa para um vendedor humano. Quando a API de cotação falha, ele não trava e não inventa preço.
 
 Três regras guiam o projeto:
-1. **Dado pessoal protegido:** CPF, telefone, e-mail, placa, CEP e nome declarado são trocados por tokens antes de chegar ao LLM, aos logs, ao checkpoint ou à fila. A detecção é por padrões; os formatos que ela ainda não cobre estão em [5.7](#57-limitações-conhecidas-e-próximos-passos).
+1. **Dado pessoal protegido:** CPF, CNPJ, RG, cartão, telefone, e-mail, placa, CEP e nome declarado são trocados por tokens antes de chegar ao LLM, aos logs, ao checkpoint ou à fila. A detecção é por padrões; os formatos que ela ainda não cobre estão em [5.7](#57-limitações-conhecidas-e-próximos-passos).
 2. **Valor real:** todo valor em R$ mostrado ao lead vem da resposta da `/quote`.
 3. **Omni:** o canal é o [Omni](https://github.com/automagik-dev/omni), da própria Namastex.
 
@@ -46,9 +46,9 @@ Pré-requisitos: `git`, Docker com Compose v2 e Python 3 (só para gerar o `.env
 git clone --recurse-submodules https://github.com/FelipeRamosOliveira/namastex-fde-challenge-response.git autoseguro-agent && cd autoseguro-agent
 ```
 
-**2. Criar o `.env`** com os segredos obrigatórios (`CHANNEL_API_KEY`, `TRACE_API_KEY`, `VAULT_KEY`):
+**2. Criar o `.env`** com os segredos (`CHANNEL_API_KEY`, `TRACE_API_KEY`, `VAULT_KEY`, `PSEUDONIMO_KEY`):
 ```bash
-cp .env.example .env && python3 -c "import base64,os,re,secrets as S;p='.env';s=open(p).read();[s:=re.sub(rf'^{k}=.*$',f'{k}={v}',s,flags=re.M) for k,v in {'CHANNEL_API_KEY':S.token_urlsafe(24),'TRACE_API_KEY':S.token_urlsafe(24),'VAULT_KEY':base64.urlsafe_b64encode(os.urandom(32)).decode()}.items()];open(p,'w').write(s)"
+cp .env.example .env && python3 -c "import base64,os,re,secrets as S;p='.env';s=open(p).read();[s:=re.sub(rf'^{k}=.*$',f'{k}={v}',s,flags=re.M) for k,v in {'CHANNEL_API_KEY':S.token_urlsafe(24),'TRACE_API_KEY':S.token_urlsafe(24),'VAULT_KEY':base64.urlsafe_b64encode(os.urandom(32)).decode(),'PSEUDONIMO_KEY':S.token_urlsafe(32)}.items()];open(p,'w').write(s)"
 ```
 
 **3. Subir:**
@@ -84,7 +84,7 @@ As figuras ficam em [`docs/figuras/`](docs/figuras/), com as specs editáveis em
 
 Uma mensagem, do WhatsApp até a resposta:
 1. O lead escreve no WhatsApp e o **Omni** recebe.
-2. O Omni chama o agente em `POST /omni/webhook` (provider `webhook`, autenticado por Bearer). O id do canal, que no WhatsApp contém o telefone, vira um id opaco: `conv_` + hash (pseudônimo, ver [5.7](#57-limitações-conhecidas-e-próximos-passos)).
+2. O Omni chama o agente em `POST /omni/webhook` (provider `webhook`, autenticado por Bearer). O id do canal, que no WhatsApp contém o telefone, vira um id opaco: `conv_` + HMAC com `PSEUDONIMO_KEY` (pseudônimo, ver [5.7](#57-limitações-conhecidas-e-próximos-passos)).
 3. A **API (FastAPI)** mascara os dados pessoais, trava a conversa (lock no Redis, para duas mensagens do mesmo lead não correrem juntas) e entrega o texto mascarado ao **grafo LangGraph**.
 4. O grafo pode pedir ajuda ao **LLM** (Groq, com OpenRouter de reserva) para entender texto livre. O LLM só devolve dados em JSON validado e uma frase sem números; ele não decide o fluxo nem o preço.
 5. Para agir, o grafo chama as **ferramentas MCP** (`mcp-tools`): consultar planos, pré-validar, cotar, registrar handoff.
@@ -115,7 +115,7 @@ A `/quote` do desafio falha em 20% das chamadas e demora 8 s em outras 10%. As d
 2. **Circuit breaker:** depois de 3 cotações falhas seguidas, o circuito abre por 15 s e só deixa passar uma chamada de teste.
 3. **Timeout e hedging:** cada chamada é cortada em 2,5 s. Se a primeira passar de 1,2 s, uma segunda sai em paralelo e vale a que responder primeiro.
 4. **Retry com jitter:** até 4 chamadas no total. Erros 422 e 400 não são repetidos (o dado está errado, repetir não resolve). Uma resposta 200 com corpo inválido conta como falha.
-5. **Segundo plano:** se ainda assim falhar, o lead é avisado ("já estou tentando de novo") e o agente agenda novas tentativas em 5, 20 e 60 s, retomando o grafo pelo checkpoint. As tentativas pendentes ficam no Redis e sobrevivem a um reinício do `agent-api` (o Redis do compose roda sem persistência em disco).
+5. **Segundo plano:** se ainda assim falhar, o lead é avisado ("já estou tentando de novo") e o agente agenda novas tentativas em 5, 20 e 60 s, retomando o grafo pelo checkpoint. As tentativas pendentes ficam no Redis (com AOF no compose) e o horário de cada uma também vai para o checkpoint: se o Redis perder a entrada, o agente reconstrói a tentativa na subida ou na próxima mensagem do lead.
 6. Quando a API responde, a cotação real vai ao lead pelo **outbox** (Omni, webhook ou `GET .../outbox`).
 7. Se as 3 tentativas em segundo plano falharem, a conversa vai para humano com o motivo `cotacao_indisponivel`.
 
@@ -171,6 +171,7 @@ Variáveis do `.env`:
 |---|---|---|
 | `CHANNEL_API_KEY` | sim | Header `x-channel-key` exigido em `/v1/messages` e no outbox |
 | `VAULT_KEY` | sim | Chave Fernet que cifra o CEP. Rotação: `nova,antiga` |
+| `PSEUDONIMO_KEY` | recomendada | Segredo do HMAC dos pseudônimos (id da conversa, hashes do vault). Sem ela, SHA-256 sem chave (aviso no log). Trocar a chave muda os ids: conversas antigas deixam de ser encontradas |
 | `TRACE_API_KEY` | não para subir, mas sem ela as rotas do vendedor e de rastreio respondem sempre 401 | Header `x-api-key` do painel do vendedor e do rastreio |
 | `GROQ_API_KEY` / `OPENROUTER_API_KEY` | não | LLM principal e reserva; sem elas, só regras (aviso no log e em `/health`). Chave gratuita do Groq: https://console.groq.com/keys |
 | `OMNI_PROVIDER_KEY`, `OMNI_URL`, `OMNI_API_KEY` | não | Ligar a um Omni real (ver `docs/omni.md`); sem elas, `/omni/webhook` fica fechado |
@@ -193,7 +194,7 @@ No Windows, o Python do venv fica em `.venv/Scripts/python`. Sem `REDIS_URL` e s
 
 ### 4.4 Testes e checagens
 ```bash
-uv run pytest                      # 211 testes: unitários + integração contra a quote-api original (LLM simulado)
+uv run pytest                      # 260 testes: unitários + integração contra a quote-api original (LLM simulado)
 uv run ruff check src tests scripts
 uv run python scripts/sanitize_ai_logs.py --check
 uv run pytest -m llm tests/live    # opcional, ao vivo com o Groq (precisa de GROQ_API_KEY e rede)
@@ -256,7 +257,7 @@ Nos cenários sem LLM nenhuma conversa ficou sem desfecho e nenhuma foi para hum
 | `POST /v1/messages` | Canal genérico (ids `omni:` recusados) | `x-channel-key` |
 | `GET /v1/conversations/{id}/outbox` | Canal: mensagens ativas | `x-channel-key` |
 | `POST /omni/webhook` | Omni (provider webhook) | `Authorization: Bearer <OMNI_PROVIDER_KEY>` |
-| `GET /v1/handoffs` | Vendedor: fila mascarada | `x-api-key` (`TRACE_API_KEY`) |
+| `GET /v1/handoffs` | Vendedor: fila mascarada, com status (`pendente`, `em_atendimento`, `devolvido`, `encerrado`; filtro `?status=`) | `x-api-key` (`TRACE_API_KEY`) |
 | `POST /v1/conversations/{id}/operador` | Vendedor: `responder` (com guardrail), `devolver`, `encerrar` | `x-api-key` |
 | `GET /v1/conversations/{id}/trace` | Rastreio mascarado | `x-api-key` |
 | `GET /v1/conversations/{id}/historico` | Checkpoints do LangGraph | `x-api-key` |
@@ -281,6 +282,7 @@ Detalhes em `docs/adr/`.
 | 0006 | Dataset em Bronze, Silver e Gold | Gold com respostas reais da API vira base de avaliação |
 | 0007 | LLM só interpreta e redige frase sem números | Entende texto livre sem poder decidir fluxo nem preço |
 | 0008 | Cotação em segundo plano retomando o checkpoint; humano com `interrupt()` | Queda passageira não vira handoff; vendedor responde, devolve ou encerra |
+| 0009 | Robustez pós-auditoria: reconciliação pelo checkpoint, reentrega, dedup e handoff idempotente no Redis, HMAC, orçamento de hedge | Casos de borda sem mudar o que já funcionava |
 
 ### 5.6 Desenvolvimento assistido por IA
 - `CLAUDE.md` e `.claude/`: contexto, regras, hooks e subagentes de revisão.
@@ -288,16 +290,16 @@ Detalhes em `docs/adr/`.
 - `ai-logs/`: export das sessões, sanitizado por `scripts/sanitize_ai_logs.py`.
 
 ### 5.7 Limitações conhecidas e próximos passos
-Achados de uma auditoria independente feita depois da V1. A versão entregue funciona nos cenários avaliados; os pontos abaixo são casos de borda que ficaram fora do prazo e o que eu faria em seguida.
+Achados de uma auditoria independente feita depois da V1 e o que foi feito com cada um (ADR 0009). Regressão de todos em `tests/integration/test_auditoria.py` e nos testes unitários de PII, cotação e LLM.
 
-| Tema | Limitação | Próximo passo |
+| Tema | Achado | Situação |
 |---|---|---|
-| Segundo plano | As tentativas pendentes ficam num hash do Redis, que no compose roda sem persistência. Se o Redis reiniciar com uma conversa em `aguardando_cotacao`, ela continua respondendo "ainda estou tentando" sem nova tentativa. | Guardar o horário da tentativa no estado do grafo, reconciliar na subida e ligar o AOF do Redis. |
-| Entrega ativa | Se a entrega pelo outbox ou pelo Omni falhar depois da cotação em segundo plano, não há reentrega e o erro não é registrado. | Worker de reentrega sobre o outbox e evento `entrega_falhou`. |
-| Idempotência | A deduplicação por `message_id` fica na memória do processo. Um webhook reentregue depois de um reinício é processado de novo. | Chave de deduplicação no Redis com TTL, dentro do lock que já existe. |
-| Handoff | Se o registro na fila falhar (MCP ou Redis fora), a conversa pausa esperando um vendedor que não a vê. A fila não tem ciclo de vida (o status fica `pendente`). | Retry idempotente do registro, estado `handoff_pendente_registro` e status `pendente`, `em_atendimento`, `encerrado`. |
-| Máscara de PII | Detecção por padrões. Não cobre CEP com espaço ou pontos (`01310 100`), CNPJ, RG, cartão, nome sem frase de apresentação nem sobrenome depois de "da"/"de". | Normalizar separadores, novos padrões (com Luhn para cartão) e testes parametrizados com essas variações. |
-| Pseudônimos | `conv_` e os hashes do vault são SHA-256 sem chave: telefone e CPF têm espaço pequeno e podem ser revertidos por força bruta. É pseudonimização, não anonimização. | HMAC com um segredo do ambiente. |
-| Frase do LLM | O filtro da frase-ponte bloqueia dígitos, R$ e promessas conhecidas, mas não valor por extenso ("cento e vinte") nem condição comercial genérica ("sem carência"). | Trocar o texto livre por frases fixas escolhidas pelo LLM por índice. |
-| Rastreio | O cache devolve o mesmo `quote_id` para leads diferentes com o mesmo perfil no mesmo dia. | Novo `quote_id` por entrega, com `source_quote_id` apontando para a resposta original. |
-| Carga no legado | O hedging manda uma segunda chamada quando a primeira passa de 1,2 s, o que dobra a carga justamente quando a API está lenta. | Orçamento de hedge (por exemplo, 10% das chamadas) e hedge desligado com o circuito degradado. |
+| Segundo plano | Com o Redis sem persistência, uma conversa em `aguardando_cotacao` perdia a tentativa e respondia "ainda estou tentando" para sempre. | **Resolvido.** Horário da tentativa no checkpoint (`retry_em`), reconciliação na subida e na mensagem do lead, AOF no Redis do compose. Testado também ao vivo (Redis sem a entrada e agente reiniciado). |
+| Entrega ativa | Falha no Omni ou no webhook não tinha reentrega nem registro. | **Resolvido.** Fila de reentrega com backoff (5 tentativas) e eventos `entrega_falhou`, `entrega_reentregue` e `entrega_desistiu`; a mensagem segue no outbox. |
+| Idempotência | Deduplicação só na memória: webhook reentregue depois de um reinício era processado de novo. | **Resolvido.** Resposta por `message_id` no Redis (48 h), dentro do lock da conversa, sem o id do canal. |
+| Handoff | Se o registro na fila falhasse, a conversa pausava sem item na fila; status sempre `pendente`. | **Resolvido.** `handoff_id` gerado antes, registro idempotente com 3 tentativas e conclusão em segundo plano; status `pendente`, `em_atendimento`, `devolvido`, `encerrado` e filtro `?status=`. |
+| Máscara de PII | Não cobria CEP com espaço ou pontos, CNPJ, RG, cartão, sobrenome depois de "da"/"de" nem nome sem frase de apresentação. | **Resolvido em parte.** Todos cobertos, menos o nome solto, sem frase de apresentação: por padrão gera falso positivo demais; fica para NER (ADR 0004). |
+| Pseudônimos | `conv_` e hashes do vault em SHA-256 sem chave, reversíveis por força bruta. | **Resolvido** com `PSEUDONIMO_KEY` (HMAC), gerada no passo 2. É opcional: ligar em instalação já em uso muda os ids das conversas. |
+| Frase do LLM | O filtro não pegava valor por extenso nem condição comercial genérica. | **Resolvido pelo filtro.** A troca por frases fixas escolhidas por índice foi rejeitada: a frase livre é o que deixa a conversa natural (ADR 0009). Continua sendo lista de bloqueio. |
+| Rastreio | O cache devolvia o mesmo `quote_id` para leads diferentes. | **Resolvido.** `quote_id` por entrega, com `source_quote_id` apontando para a resposta original da API. |
+| Carga no legado | O hedging dobrava a carga justamente com a API lenta. | **Resolvido.** Orçamento de hedge (10% das cotações por minuto, piso de 3) e hedge desligado com cotação falhando. |

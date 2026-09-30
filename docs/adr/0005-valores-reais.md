@@ -11,4 +11,4 @@
 
 ## Consequências
 - Na etapa 4 o LLM só escreve texto sem valores; os valores entram pelo template.
-- Limite: a frase-ponte do LLM é filtrada por lista de bloqueio (dígito, R$, promessas conhecidas). Valor por extenso ("cento e vinte") ou condição comercial genérica ("sem carência") não é pego por esse filtro nem pelo guardrail de saída, que procura `R$` seguido de número. Próximo passo em README 5.7.
+- Limite: a frase-ponte do LLM é filtrada por lista de bloqueio (dígito, R$, promessas conhecidas). Depois da auditoria, a lista pega também valor por extenso ("cento e vinte") e condição comercial genérica ("sem carência", "cobre tudo", "parcelar") (ADR 0009). Continua sendo lista de bloqueio: uma formulação nova pode passar, e o guardrail de saída só procura `R$` seguido de número.

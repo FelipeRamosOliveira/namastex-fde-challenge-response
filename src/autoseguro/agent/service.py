@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import hashlib
 import json
 import logging
 import re
@@ -46,9 +45,11 @@ from autoseguro.guardrails.pii import (
     PiiVault,
     abrir_texto,
     cifrar_texto,
+    configurar_chave_pseudonimo,
     configurar_chave_vault,
     mask,
     nomes_conhecidos,
+    pseudonimo,
 )
 from autoseguro.llm.client import LLMClient, providers_from_settings
 from autoseguro.tools.handoff import HandoffQueue
@@ -59,12 +60,14 @@ MAX_DEDUP = 5000
 log = logging.getLogger("autoseguro")
 trace_log = logging.getLogger("autoseguro.trace")
 PENDENTES_KEY = "retry:pendentes"
+HANDOFF_REGISTRO_KEY = "handoff:registro_pendente"
+HANDOFF_REGISTRO_ESPERAS_S = (1.0, 5.0, 30.0, 120.0, 600.0)
 NO_PAUSADO = ("aguardar_humano",)
 _REF = re.compile(r"conv_[0-9a-f]{16}")
 
 
 def conversation_ref(conversation_id: str) -> str:
-    return "conv_" + hashlib.sha256(conversation_id.encode()).hexdigest()[:16]
+    return "conv_" + pseudonimo(conversation_id)[:16]
 
 
 def resolver_ref(id_ou_ref: str) -> str:
@@ -75,6 +78,13 @@ def resolver_ref(id_ou_ref: str) -> str:
 
 def canal_key(ref: str) -> str:
     return f"canal:{ref}"
+
+
+DEDUP_TTL_S = 48 * 3600  # reentregas do canal chegam em minutos; 48 h cobre com folga
+
+
+def dedup_key(ref: str, message_id: str) -> str:
+    return f"dedup:{ref}:{pseudonimo(message_id)[:24]}"
 
 
 def _agora() -> str:
@@ -109,6 +119,13 @@ class AutoSeguroAgent:
         configurar_chave_vault(self.s.vault_key.get_secret_value() if self.s.vault_key else None)
         if not self.s.vault_key:
             log.warning("VAULT_KEY não definida: CEP fica sem cifra no checkpoint (só desenvolvimento)")
+        chave_pseudo = self.s.pseudonimo_key.get_secret_value() if self.s.pseudonimo_key else None
+        configurar_chave_pseudonimo(chave_pseudo)
+        if not chave_pseudo:
+            log.warning(
+                "PSEUDONIMO_KEY não definida: ids de conversa e hashes do vault usam SHA-256 sem chave "
+                "(reversível por força bruta para telefone e CPF)"
+            )
         if self.s.mcp_url:
             target = self.s.mcp_url
             self.store = make_store(self.s.redis_url)
@@ -124,6 +141,7 @@ class AutoSeguroAgent:
         gateway = await self._stack.enter_async_context(ToolGateway(target))
         Path(self.s.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
         saver = await self._stack.enter_async_context(AsyncSqliteSaver.from_conn_string(self.s.checkpoint_db))
+        self._saver = saver
         kw: dict[str, Any] = {
             "max_turnos_sem_progresso": self.s.max_turnos_sem_progresso,
             "retry_delays": tuple(self.s.retry_fundo_delays_s),
@@ -145,7 +163,19 @@ class AutoSeguroAgent:
         except Exception:  # noqa: BLE001, S110 - sem aquecimento, o primeiro turno só fica mais lento
             pass
         await self._reagendar_pendentes()
+        self._spawn(self._loop_reentrega())
         return self
+
+    async def _loop_reentrega(self) -> None:
+        """Reentrega as mensagens ativas que o Omni ou o webhook recusaram (ver `Outbox`).
+        O lock evita que duas réplicas reentreguem a mesma mensagem na mesma passada."""
+        while True:
+            await asyncio.sleep(self.s.reentrega_intervalo_s)
+            try:
+                async with self.store.lock("outbox:reentrega", timeout_s=30):
+                    await self.outbox.reentregar(self._canal)
+            except Exception as e:  # noqa: BLE001 - o laço não pode morrer; tenta na próxima passada
+                log.warning("reentrega falhou nesta passada: %s", type(e).__name__)
 
     async def __aexit__(self, *exc) -> None:
         for t in list(self._tasks):
@@ -187,11 +217,18 @@ class AutoSeguroAgent:
         self, conversation_id: str, text: str, message_type: str = "text", message_id: str | None = None
     ) -> dict[str, Any]:
         ref = conversation_ref(conversation_id)
+        do_canal = message_id is not None  # id gerado aqui nunca se repete: não precisa deduplicar
         message_id = message_id or f"msg_{uuid.uuid4().hex[:12]}"
         cfg = self._cfg(ref)
         async with self.store.lock(f"conv:{ref}"):
             if (ref, message_id) in self._dedup:
                 return {**self._dedup[(ref, message_id)], "duplicada": True}
+            # auditoria: a deduplicação só na memória deixava um webhook reentregue depois de um
+            # reinício ser processado de novo. A resposta fica no store (Redis), sem o id do canal.
+            if do_canal and (salvo := await self.store.get_json(dedup_key(ref, message_id))):
+                out = {**salvo, "conversation_id": conversation_id}
+                self._dedup[(ref, message_id)] = out
+                return {**out, "duplicada": True}
             snap = await self.graph.aget_state(cfg)
             if not snap or not snap.values:  # id do canal cifrado: só para rotear mensagens ativas
                 await self.store.set_json(canal_key(ref), cifrar_texto(conversation_id))
@@ -215,9 +252,19 @@ class AutoSeguroAgent:
                     cfg,
                 )
                 await self._talvez_agendar(ref, st)
+                await self._talvez_registrar_handoff(ref, st)
+                if (
+                    st.get("stage") == "aguardando_cotacao"
+                    and st.get("agendar_retry") is None
+                    and ref not in await self.store.hgetall(PENDENTES_KEY)
+                ):  # "ainda estou tentando" sem tentativa agendada (Redis perdeu): reconstrói
+                    await self._reagendar_se_esperando(ref, st)
             self._log_eventos(st, antes)
             out = self._resposta(conversation_id, ref, message_id, st)
             self._dedup[(ref, message_id)] = out
+            if do_canal:
+                sem_id = {k: v for k, v in out.items() if k != "conversation_id"}
+                await self.store.set_json(dedup_key(ref, message_id), sem_id, ttl_s=DEDUP_TTL_S)
             while len(self._dedup) > MAX_DEDUP:
                 self._dedup.popitem(last=False)
             return out
@@ -299,8 +346,82 @@ class AutoSeguroAgent:
         t.add_done_callback(self._tasks.discard)
 
     async def _reagendar_pendentes(self) -> None:
-        for ref, item in (await self.store.hgetall(PENDENTES_KEY)).items():
+        pendentes = await self.store.hgetall(PENDENTES_KEY)
+        for ref, item in pendentes.items():
             self._spawn(self._retentar(ref, item["due"]))
+        await self._reconciliar_aguardando(set(pendentes))
+        for ref, reg in (await self.store.hgetall(HANDOFF_REGISTRO_KEY)).items():
+            self._spawn(self._registrar_handoff(ref, reg))
+
+    async def _reconciliar_aguardando(self, ja_agendadas: set[str]) -> None:
+        """Auditoria: se o Redis reiniciava sem persistência, a conversa em `aguardando_cotacao`
+        perdia a tentativa e ficava para sempre em "ainda estou tentando". Na subida, o checkpoint
+        (SQLite) é a fonte: toda conversa esperando cotação sem entrada no Redis ganha a tentativa de
+        volta, no horário gravado no estado (ou já, se passou)."""
+        try:
+            async with self._saver.conn.execute("SELECT DISTINCT thread_id FROM checkpoints") as cur:
+                refs = [r[0] for r in await cur.fetchall()]
+        except Exception as e:  # noqa: BLE001 - sem reconciliação, a mensagem do lead ainda reagenda
+            log.warning("reconciliação de tentativas não rodou: %s", type(e).__name__)
+            return
+        for ref in refs:
+            if ref not in ja_agendadas:
+                await self._reagendar_se_esperando(ref)
+
+    async def _reagendar_se_esperando(self, ref: str, v: dict[str, Any] | None = None) -> None:
+        if v is None:
+            snap = await self.graph.aget_state(self._cfg(ref))
+            v = (snap.values or {}) if snap else {}
+        if v.get("stage") != "aguardando_cotacao":
+            return
+        due = max(time.time() + 1.0, float(v.get("retry_em") or 0))
+        await self.store.hset(PENDENTES_KEY, ref, {"due": due})
+        self._spawn(self._retentar(ref, due))
+        log.info("tentativa em segundo plano reconstruída a partir do checkpoint")
+
+    # ------------------------------------------------------------------ registro de handoff pendente
+    async def _talvez_registrar_handoff(self, ref: str, st: dict[str, Any]) -> None:
+        """O grafo não conseguiu pôr a conversa na fila (MCP ou Redis fora): conclui aqui, em
+        segundo plano, direto na fila (mesmo store) e com o mesmo `handoff_id` (idempotente)."""
+        reg = st.get("handoff_registro")
+        if not reg:
+            return
+        with contextlib.suppress(Exception):  # store fora: a tarefa em memória tenta mesmo assim
+            await self.store.hset(HANDOFF_REGISTRO_KEY, ref, reg)
+        self._spawn(self._registrar_handoff(ref, reg))
+
+    async def _registrar_handoff(self, ref: str, reg: dict[str, Any]) -> None:
+        for espera in HANDOFF_REGISTRO_ESPERAS_S:
+            await asyncio.sleep(espera)
+            try:
+                item = await self.handoffs.registrar(**reg)
+            except Exception as e:  # noqa: BLE001 - tenta de novo na próxima espera
+                log.warning("registro de handoff ainda falhando: %s", type(e).__name__)
+                continue
+            cfg = self._cfg(ref)
+            async with self.store.lock(f"conv:{ref}"):
+                snap = await self.graph.aget_state(cfg)
+                v = (snap.values or {}) if snap else {}
+                if (
+                    snap
+                    and snap.next == NO_PAUSADO
+                    and (v.get("handoff") or {}).get("handoff_id") == item["handoff_id"]
+                ):
+                    ev = {
+                        "event_id": f"evt_{uuid.uuid4().hex[:12]}",
+                        "ts": _agora(),
+                        "conversation_id": ref,
+                        "type": "handoff_registrado",
+                        "handoff_id": item["handoff_id"],
+                    }
+                    await self.graph.aupdate_state(
+                        cfg, {"handoff": item, "handoff_registro": None, "events": [ev]}, as_node="saida"
+                    )
+                    self._log_eventos({"events": [ev]}, 0)
+            with contextlib.suppress(Exception):
+                await self.store.hdel(HANDOFF_REGISTRO_KEY, ref)
+            return
+        log.error("registro de handoff desistiu depois de %d tentativas", len(HANDOFF_REGISTRO_ESPERAS_S))
 
     async def _canal(self, ref: str) -> str | None:
         v = await self.store.get_json(canal_key(ref))
@@ -330,6 +451,7 @@ class AutoSeguroAgent:
                 cfg,
             )
             self._log_eventos(st, antes)
+            await self._talvez_registrar_handoff(ref, st)
             if st.get("reply"):
                 await self._entregar(ref, st, "agente")
             if st.get("agendar_retry") is None:
@@ -392,12 +514,22 @@ class AutoSeguroAgent:
                     },
                     as_node="saida",
                 )
+                await self._status_handoff(snap.values, "em_atendimento")
                 return {"ok": True, "entregue": item}
             if acao not in ("devolver", "encerrar"):
                 raise ValueError("acao inválida")
             st = await self.graph.ainvoke(Command(resume={"acao": acao}), cfg)
+            await self._status_handoff(snap.values, "devolvido" if acao == "devolver" else "encerrado")
             item = await self._entregar(ref, st, "agente") if st.get("reply") else None
             return {"ok": True, "stage": st.get("stage"), "entregue": item}
+
+    async def _status_handoff(self, valores: dict[str, Any], status: str) -> None:
+        """Ciclo de vida do item na fila (auditoria: ficava 'pendente' para sempre)."""
+        if hid := (valores.get("handoff") or {}).get("handoff_id"):
+            try:
+                await self.handoffs.atualizar_status(hid, status)
+            except Exception as e:  # noqa: BLE001 - a ação do vendedor já aconteceu; só o status atrasou
+                log.warning("status do handoff não atualizado: %s", type(e).__name__)
 
     # ------------------------------------------------------------------ leitura
     async def mensagens_ativas(self, conversation_id: str, depois_de: int = 0) -> list[dict[str, Any]]:

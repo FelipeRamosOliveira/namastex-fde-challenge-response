@@ -99,3 +99,93 @@ def test_mask_dict_recursivo_preserva_ids():
 def test_ids_internos_nao_sao_pii_mas_pii_ao_lado_e():
     assert scan('{"message_id": "msg_2b2c99598446", "event_id": "evt_9081989502b1"}') == []
     assert [e.kind for e in scan("msg_2b2c99598446 cpf 389.083.863-43")] == [PiiKind.CPF]
+
+
+# Auditoria pós-V1: variações que a máscara não cobria
+@pytest.mark.parametrize(
+    ("texto", "tipo", "valor"),
+    [
+        ("cep 01310 100", PiiKind.CEP, "01310 100"),
+        ("cep 01.310-100", PiiKind.CEP, "01.310-100"),
+        ("cep 01310.100", PiiKind.CEP, "01310.100"),
+        ("cnpj 12.345.678/0001-95", PiiKind.CNPJ, "12.345.678/0001-95"),
+        ("cnpj 12345678000195", PiiKind.CNPJ, "12345678000195"),
+        ("rg 12.345.678-9", PiiKind.RG, "12.345.678-9"),
+        ("meu RG: 123456789", PiiKind.RG, "123456789"),
+        ("identidade nº 12.345.678-X", PiiKind.RG, "12.345.678-X"),
+        ("cartão 4111 1111 1111 1111", PiiKind.CARTAO, "4111 1111 1111 1111"),
+        ("cartao 5555-5555-5555-4444", PiiKind.CARTAO, "5555-5555-5555-4444"),
+        ("cartao 4111111111111111", PiiKind.CARTAO, "4111111111111111"),
+        ("amex 3782 822463 10005", PiiKind.CARTAO, "3782 822463 10005"),
+    ],
+)
+def test_detecta_variacoes_da_auditoria(texto, tipo, valor):
+    ents = scan(texto)
+    assert [(e.kind, e.value) for e in ents] == [(tipo, valor)], ents
+
+
+@pytest.mark.parametrize(
+    ("texto", "partes"),
+    [
+        ("me chamo Ana da Silva", {"Ana", "Silva"}),
+        ("meu nome é joão de souza", {"joão", "souza"}),
+        ("sou a Maria dos Santos", {"Maria", "Santos"}),
+        ("me chamo Pedro Paulo das Neves", {"Pedro", "Paulo", "Neves"}),
+    ],
+)
+def test_sobrenome_depois_de_da_de(texto, partes):
+    assert {e.value for e in scan(texto) if e.kind is PiiKind.NOME} == partes
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "número 4111 1111 1111 1112",  # não passa no Luhn
+        "franquia de R$ 3.000,00 e prêmio de R$ 1.234,56",
+        "protocolo 1234 5678",
+        "início em 01/10/2026, 30 dias de carência",
+        "sou de São Paulo",
+        "sim-conv_01185-1790708560324",  # id do simulador: passava no Luhn por acaso
+        "timestamp 1790708560324 ms",
+    ],
+)
+def test_variacoes_sem_falso_positivo(texto):
+    assert not contains_pii(texto), scan(texto)
+
+
+def test_cep_com_espaco_mascarado_e_cotavel():
+    """O vault guarda o CEP como o lead escreveu; a cotação normaliza os dígitos."""
+    from autoseguro.tools.quote_client import normalize_payload
+
+    v = PiiVault()
+    r = mask("o carro dorme no 01310 100", v)
+    assert r.text == "o carro dorme no [CEP_1]"
+    assert (
+        normalize_payload({"idade": 30, "veiculo_ano": 2020, "cep": v.reveal("[CEP_1]")})["cep"]
+        == "01310-100"
+    )
+
+
+def test_pseudonimo_com_hmac_e_compativel_sem_chave():
+    """Auditoria: SHA-256 sem chave de telefone/CPF é reversível por força bruta."""
+    import hashlib
+
+    from autoseguro.agent.service import conversation_ref
+    from autoseguro.guardrails.pii import configurar_chave_pseudonimo, pseudonimo
+
+    tel = "omni:inst:5521972242584"
+    try:
+        configurar_chave_pseudonimo(None)  # sem chave: o mesmo id de antes (conversas já gravadas)
+        assert conversation_ref(tel) == "conv_" + hashlib.sha256(tel.encode()).hexdigest()[:16]
+        configurar_chave_pseudonimo("segredo-1")
+        com_chave = conversation_ref(tel)
+        assert com_chave != "conv_" + hashlib.sha256(tel.encode()).hexdigest()[:16]
+        assert com_chave == conversation_ref(tel)  # estável com a mesma chave
+        v = PiiVault()
+        mask("cpf 389.083.863-43", v)
+        assert v.tokens["[CPF_1]"] == "h:" + pseudonimo("38908386343")[:20]
+        assert mask("de novo 389.083.863-43", v).text == "de novo [CPF_1]"  # mesmo token
+        configurar_chave_pseudonimo("segredo-2")
+        assert conversation_ref(tel) != com_chave
+    finally:
+        configurar_chave_pseudonimo(None)

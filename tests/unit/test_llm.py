@@ -235,3 +235,34 @@ def test_ano_que_o_lead_escreveu_sai_da_frase():
 )
 def test_frase_nao_decide_handoff_nem_condicao(frase):
     assert not frase_valida(frase)
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        "Esse plano sai por cento e vinte por mês!",
+        "Fica mais ou menos duzentos ao mês.",
+        "Esse plano é sem carência nenhuma!",
+        "Fica sem franquia pra você.",
+        "Dá pra parcelar sem juros.",
+        "A cobertura é total, cobre tudo!",
+        "Você fica isento da franquia.",
+        "A proteção começa imediatamente.",
+    ],
+)
+def test_frase_sem_valor_por_extenso_nem_condicao_generica(frase):
+    """Auditoria: o filtro não pegava valor por extenso nem condição comercial genérica."""
+    assert not frase_valida(frase)
+
+
+@pytest.mark.parametrize(
+    "frase",
+    [
+        "Boa pergunta! A franquia é a parte que você paga se acionar o seguro.",
+        "Entendo, o valor certo sai da cotação.",
+        "Perfeito, anotado!",
+        "Que bom, vamos cuidar do seu HB20!",
+    ],
+)
+def test_frases_boas_continuam_passando(frase):
+    assert frase_valida(frase)

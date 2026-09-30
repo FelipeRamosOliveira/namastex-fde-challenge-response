@@ -15,12 +15,20 @@ from autoseguro.llm.client import LLMClient, LLMIndisponivel, PiiBloqueada
 PROMPT_VERSION = "redator-v4"
 MAX_CHARS = 180
 _PROIBIDO = re.compile(
-    r"\d|R\$|reais|\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME)_\d+\]|desconto|gr[aá]tis|garant|aprovad|promo"
+    r"\d|R\$|reais|\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME|CNPJ|RG|CARTAO)_\d+\]|desconto|gr[aá]tis|garant|aprovad|promo"
     # anunciar um passo que o fluxo pode não dar (teste ao vivo: "vamos começar!" faltando dado)
     r"|vamos (cotar|calcular|come[cç]ar|fechar|finalizar)|(fazer|calcular) a cota[cç][aã]o agora"
     # passar para humano e mexer em condição são decisões do fluxo (avaliação com Groq:
     # "vamos encaminhar para um especialista" sem handoff, "ajustar ao seu orçamento")
-    r"|encaminh|especialista|consultor|ajust",
+    r"|encaminh|especialista|consultor|ajust"
+    # auditoria: valor por extenso ("cento e vinte") e condição comercial genérica ("sem carência")
+    r"|\b(dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta"
+    r"|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|cem|cento|duzentos|trezentos|quatrocentos"
+    r"|quinhentos|seiscentos|setecentos|oitocentos|novecentos|mil|milh[aõ]o|milh[oõ]es|metade|dobro"
+    r"|por cento)\b"
+    r"|sem (car[eê]ncia|franquia|juros|custo|taxa|burocracia|an[aá]lise)|isen[tç]|zero de|reembols"
+    r"|cashback|b[oô]nus|brinde|parcel|[aà] vista|mais barat|menor pre[cç]o|pre[cç]o baixo"
+    r"|cobre tudo|cobertura (total|completa|integral)|100%|imediat",
     re.IGNORECASE,
 )
 

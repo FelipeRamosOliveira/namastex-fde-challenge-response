@@ -108,7 +108,11 @@ async def test_cache_devolve_mesma_cotacao_sem_nova_chamada():
     c = make(h)
     a = await c.cotar(PAYLOAD)
     b = await c.cotar({**PAYLOAD, "plano_id": "COMPLETO"})  # normalização
-    assert b.from_cache and b.quote_id == a.quote_id and b.quote == a.quote
+    assert b.from_cache and b.quote == a.quote
+    # auditoria: cada entrega tem id próprio, ligado à resposta original da API
+    assert b.quote_id != a.quote_id and b.source_quote_id == a.quote_id
+    c3 = await c.cotar(PAYLOAD)
+    assert c3.source_quote_id == a.quote_id and c3.quote_id not in (a.quote_id, b.quote_id)
     assert calls["n"] == 1
 
 
@@ -172,3 +176,24 @@ async def test_normaliza_cep(cep):
 
     await make(h).cotar({**PAYLOAD, "cep": cep})
     assert captured["cep"] == "26703-384"
+
+
+async def test_hedge_respeita_orcamento():
+    """Auditoria: o hedge dobrava a carga justamente quando a API estava lenta."""
+    h, calls = sequence(("ok", 0.35))  # toda chamada passa do limiar de hedge (0,2 s)
+    c = make(h, quote_hedge_budget_min=1, quote_hedge_budget_ratio=0.0)
+    a = await c.cotar(PAYLOAD)
+    b = await c.cotar({**PAYLOAD, "idade": 36})
+    assert a.status is QuoteStatus.OK and b.status is QuoteStatus.OK
+    assert sum(x.hedge for x in a.attempts) == 1  # usou o único hedge do minuto
+    assert not any(x.hedge for x in b.attempts)  # sem orçamento: esperou a chamada em voo
+    assert calls["n"] == 3
+
+
+async def test_sem_hedge_com_circuito_degradado():
+    h, calls = sequence(("ok", 0.35))
+    c = make(h)
+    await c.breaker.failure()  # uma cotação acabou de falhar
+    out = await c.cotar(PAYLOAD)
+    assert out.status is QuoteStatus.OK and not any(x.hedge for x in out.attempts)
+    assert calls["n"] == 1

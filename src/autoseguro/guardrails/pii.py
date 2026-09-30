@@ -11,6 +11,7 @@ mesmo token ao mesmo valor e reconhecer um nome já dito, sem reter o dado.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -24,6 +25,9 @@ class PiiKind(StrEnum):
     PLACA = "PLACA"
     CEP = "CEP"
     NOME = "NOME"
+    CNPJ = "CNPJ"
+    RG = "RG"
+    CARTAO = "CARTAO"
 
 
 RETER_ORIGINAL = {PiiKind.CEP}  # únicos originais guardados no vault
@@ -69,11 +73,31 @@ def abrir_texto(valor: str) -> str | None:
 _cifrar = cifrar_texto
 _abrir = abrir_texto
 
+# Pseudônimos (id da conversa, hashes do vault). Com PSEUDONIMO_KEY: HMAC-SHA256 com esse segredo;
+# sem ela, SHA-256 puro (compatível com as conversas já gravadas). Auditoria: telefone e CPF têm
+# espaço pequeno e o SHA-256 sem chave pode ser revertido por força bruta; é pseudonimização,
+# não anonimização. Trocar a chave muda os ids: conversas antigas não são encontradas.
+_chave_pseudonimo: bytes | None = None
+
+
+def configurar_chave_pseudonimo(chave: str | None) -> None:
+    global _chave_pseudonimo
+    _chave_pseudonimo = chave.encode() if chave else None
+
+
+def pseudonimo(valor: str) -> str:
+    """Hash hexadecimal de um identificador: HMAC quando há chave configurada."""
+    if _chave_pseudonimo:
+        return hmac.new(_chave_pseudonimo, valor.encode(), hashlib.sha256).hexdigest()
+    return hashlib.sha256(valor.encode()).hexdigest()
+
 
 _SEP = r"[\s.-]?"
 # Ordem importa: padrões mais específicos primeiro, para um número não ser capturado duas vezes.
 _PATTERNS: list[tuple[PiiKind, re.Pattern[str]]] = [
     (PiiKind.EMAIL, re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    # CNPJ: 00.000.000/0000-00 ou 14 dígitos corridos (antes do CPF e do telefone)
+    (PiiKind.CNPJ, re.compile(r"(?<!\d)\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}(?!\d)")),
     # CPF pontuado: 000.000.000-00 / 000 000 000 00 (11 dígitos corridos: ver _NUM_LONGO)
     (PiiKind.CPF, re.compile(r"(?<!\d)\d{3}[.\s]\d{3}[.\s]\d{3}[-.\s]\d{2}(?!\d)")),
     # Celular: +55, DDD opcional (com/sem parênteses), 9 separado ou não: 9 7224-2584, 97224 2584
@@ -91,19 +115,46 @@ _PATTERNS: list[tuple[PiiKind, re.Pattern[str]]] = [
     ),
     # Placa: antiga ABC-1234 / ABC1234 e Mercosul ABC1D23
     (PiiKind.PLACA, re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{3}-?\d[A-Za-z0-9]\d{2}(?![A-Za-z0-9])")),
-    # CEP: 00000-000 ou 00000000
-    (PiiKind.CEP, re.compile(r"(?<!\d)\d{5}-?\d{3}(?!\d)")),
+    # CEP: 00000-000, 00000000 e as variações com outro separador (00000 000, 00.000-000, 00000.000)
+    (PiiKind.CEP, re.compile(r"(?<![\d.])\d{2}\.?\d{3}[-\s.]?\d{3}(?!\d|[.,]\d)")),
 ]
+# RG: só com a palavra antes ("rg 12.345.678-9", "RG: 123456789"); o número sozinho é ambíguo
+_RG = re.compile(
+    r"\b(?:rg|identidade)\b\s*(?:n[º°o.]*\s*)?[:\s]\s*(\d{1,2}\.?\d{3}\.?\d{3}-?[\dxX])(?!\d)", re.IGNORECASE
+)
+# Cartão: grupos de 4 com o mesmo separador (espaço, hífen ou nenhum) ou Amex 4-6-5; confirmado pelo
+# Luhn. Sem grupo fixo, ids como "sim-conv_01185-1790708560324" passavam no Luhn por acaso.
+_CARTAO = re.compile(
+    r"(?<![\w.-])(?:\d{4}([ -]?)\d{4}\1\d{4}\1\d{1,7}|\d{4}([ -]?)\d{6}\2\d{5})(?![\w-]|[.,]\d)"
+)
 # 10 ou 11 dígitos corridos que sobraram: CPF (mesmo com dígito inválido) ou telefone
 _NUM_LONGO = re.compile(r"(?<!\d)\d{10,11}(?!\d)")
 # Nome declarado: "meu nome é Ana Souza", "me chamo ana", "sou a Ana Souza" (com maiúscula)
+# Sobrenome depois de "da", "de", "do", "dos", "das" também entra ("Ana da Silva", "João de Souza")
+_CONECTOR = r"(?:\s+d[aeo]s?\s+[A-Za-zÀ-ÿ]{2,})"
+_NAO_CONECTOR = r"(?!d[aeo]s?\b)"  # o segundo nome não pode ser o "da" do sobrenome
 _NOME_DECL = re.compile(
-    r"(?:meu nome (?:é|e|eh)|me chamo)\s+([A-Za-zÀ-ÿ]{2,}(?:\s+[A-Za-zÀ-ÿ]{2,})?)"
-    r"|(?:\bsou (?:o|a))\s+([A-ZÀ-Ý][a-zà-ÿ]+(?:\s+[A-ZÀ-Ý][a-zà-ÿ]+)?)",
+    rf"(?:meu nome (?:é|e|eh)|me chamo)\s+"
+    rf"([A-Za-zÀ-ÿ]{{2,}}(?:\s+{_NAO_CONECTOR}[A-Za-zÀ-ÿ]{{2,}})?{_CONECTOR}*)"
+    rf"|(?:\bsou (?:o|a))\s+([A-ZÀ-Ý][a-zà-ÿ]+(?:\s+{_NAO_CONECTOR}[A-ZÀ-Ý][a-zà-ÿ]+)?{_CONECTOR}*)",
     re.IGNORECASE,
 )
-_NAO_NOME = {"de", "da", "do", "e", "cliente", "interessado", "interessada", "dono", "dona", "seu", "sua"}
-_TOKEN_RE = re.compile(r"\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME)_\d+\]")
+_NAO_NOME = {
+    "de",
+    "da",
+    "do",
+    "dos",
+    "das",
+    "e",
+    "cliente",
+    "interessado",
+    "interessada",
+    "dono",
+    "dona",
+    "seu",
+    "sua",
+}
+_TOKEN_RE = re.compile(r"\[(CPF|EMAIL|TELEFONE|PLACA|CEP|NOME|CNPJ|RG|CARTAO)_\d+\]")
 # Ids gerados pelo próprio sistema (hex): não são PII, mas têm sequências de dígitos
 _ID_INTERNO = re.compile(r"\b(?:evt|msg|qr|q|ho|out|sys|conv|omni|sim)_[0-9a-f]{6,}\b")
 
@@ -120,6 +171,19 @@ def cpf_valido(cpf: str) -> bool:
     return True
 
 
+def luhn_valido(numero: str) -> bool:
+    """Dígito verificador de cartão (Luhn)."""
+    d = [int(c) for c in numero if c.isdigit()]
+    if not 13 <= len(d) <= 19 or len(set(d)) == 1:
+        return False
+    soma = 0
+    for i, v in enumerate(reversed(d)):
+        if i % 2:
+            v = v * 2 - 9 if v > 4 else v * 2
+        soma += v
+    return soma % 10 == 0
+
+
 def _fold(s: str) -> str:
     s = unicodedata.normalize("NFKD", s.lower())
     return "".join(c for c in s if not unicodedata.combining(c)).strip()
@@ -132,7 +196,7 @@ def _normalize(kind: PiiKind, value: str) -> str:
 
 
 def _h(s: str) -> str:
-    return "h:" + hashlib.sha256(s.encode()).hexdigest()[:20]
+    return "h:" + pseudonimo(s)[:20]
 
 
 @dataclass
@@ -202,8 +266,15 @@ def scan(text: str, names: list[str] | None = None, vault: PiiVault | None = Non
         taken.append((m.start(), m.end()))
     for m in _ID_INTERNO.finditer(text):
         taken.append((m.start(), m.end()))
+    for m in _CARTAO.finditer(text):  # cartão (Luhn) antes de CPF, CNPJ e telefone
+        digitos = re.sub(r"\D", "", m.group(0))
+        if free(m.start(), m.end()) and len(digitos) != 14 and luhn_valido(digitos):
+            add(PiiKind.CARTAO, m.start(), m.end())
+    for m in _RG.finditer(text):
+        if free(m.start(1), m.end(1)):
+            add(PiiKind.RG, m.start(1), m.end(1))
     for m in _NUM_LONGO.finditer(text):  # CPF válido sem pontuação vence o padrão de celular
-        if len(m.group(0)) == 11 and cpf_valido(m.group(0)):
+        if free(m.start(), m.end()) and len(m.group(0)) == 11 and cpf_valido(m.group(0)):
             add(PiiKind.CPF, m.start(), m.end())
     for kind, pat in _PATTERNS:
         for m in pat.finditer(text):
